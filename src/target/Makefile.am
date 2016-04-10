@@ -36,6 +36,7 @@ libtarget_la_SOURCES = \
 	$(MIPS32_SRC) \
 	$(NDS32_SRC) \
 	$(INTEL_IA32_SRC) \
+	$(RISCV_SPINAL_SRC) \
 	avrt.c \
 	dsp563xx.c \
 	dsp563xx_once.c \
@@ -51,6 +52,9 @@ TARGET_CORE_SRC = \
 	target_request.c \
 	testee.c \
 	smp.c
+
+RISCV_SPINAL_SRC = \
+	riscv_spinal.c
 
 ARMV4_5_SRC = \
 	armv4_5.c \
