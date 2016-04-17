@@ -59,6 +59,7 @@ enum riscv_spinal_reg_nums {
 #define RISCV_SPINAL_FLAGS_PIP_FLUSH 1<<2
 #define RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT 1<<3
 #define RISCV_SPINAL_FLAGS_STEP 1<<4
+#define RISCV_SPINAL_FLAGS_PC_INC 1<<5
 
 
 
@@ -198,6 +199,18 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 
 	int rsp =  riscv_spinal_read32(target,riscv_spinal->cpuAddress + riscv_spinal_core_reg_list_arch_info[reg->number].spr_num,reg->value);
 	if(rsp != ERROR_OK) return rsp;
+
+	if(reg->number == RISCV_SPINAL_REG_PC){
+		rsp = riscv_spinal_get_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS]);
+		if (rsp != ERROR_OK) return rsp;
+		uint32_t flags = *((uint32_t*)riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS].value);
+
+		if(!(flags & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT)){
+			if(flags & RISCV_SPINAL_FLAGS_PC_INC){
+				*(uint32_t*)reg->value += 4;
+			}
+		}
+	}
 	reg->valid = 1;
 	reg->dirty = 0;
 	return ERROR_OK;
@@ -731,10 +744,12 @@ static int riscv_spinal_remove_breakpoint(struct target *target,
 	return ERROR_OK;
 }
 
+//TODO look like instruction step when branch is strange
 static int riscv_spinal_resume_or_step(struct target *target, int current,
 			       uint32_t address, int handle_breakpoints,
 			       int debug_execution, int step)
 {
+
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	struct breakpoint *breakpoint = NULL;
 	uint32_t resume_pc;
@@ -752,15 +767,20 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 
 	/* current ? continue on current pc : continue at <address> */
 
-	if (!current)
-		riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_PC],address);
+	if (!current){
+		resume_pc = address;
+	}else{
+		riscv_spinal_get32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_PC],&resume_pc);
+	}
+
+	riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_PC],resume_pc);
 
 	int retval = riscv_spinal_restore_context(target);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while calling riscv_spinal_restore_context");
 		return retval;
 	}
-	riscv_spinal_get32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_PC],&resume_pc);
+
 
 	/* The front-end may request us not to handle breakpoints */
 	if (handle_breakpoints) {
@@ -880,6 +900,19 @@ static int riscv_spinal_soft_reset_halt(struct target *target)
 }
 
 
+static int riscv_spinal_add_watchpoint(struct target *target,
+			       struct watchpoint *watchpoint)
+{
+	LOG_ERROR("%s: implement me", __func__);
+	return ERROR_OK;
+}
+
+static int riscv_spinal_remove_watchpoint(struct target *target,
+				  struct watchpoint *watchpoint)
+{
+	LOG_ERROR("%s: implement me", __func__);
+	return ERROR_OK;
+}
 
 struct target_type riscv_spinal_target = {
 	.name = "riscv_spinal",
@@ -898,6 +931,8 @@ struct target_type riscv_spinal_target = {
 
 	.add_breakpoint = riscv_spinal_add_breakpoint,
 	.remove_breakpoint = riscv_spinal_remove_breakpoint,
+	.add_watchpoint = riscv_spinal_add_watchpoint,
+	.remove_watchpoint = riscv_spinal_remove_watchpoint,
 
 	.assert_reset = riscv_spinal_assert_reset,
 	.deassert_reset = riscv_spinal_deassert_reset,
