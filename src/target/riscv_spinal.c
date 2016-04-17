@@ -53,9 +53,18 @@ enum riscv_spinal_reg_nums {
 };
 
 
-#define RISCV_SPINAL_FLAGS_RESET 1
-#define RISCV_SPINAL_FLAGS_HALT 2
-#define RISCV_SPINAL_FLAGS_RUNNING 4
+#define RISCV_SPINAL_FLAGS_RESET 1<<0
+#define RISCV_SPINAL_FLAGS_HALT 1<<1
+#define RISCV_SPINAL_FLAGS_PIP_EMPTY 1<<2
+#define RISCV_SPINAL_FLAGS_PIP_FLUSH 1<<2
+#define RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT 1<<3
+#define RISCV_SPINAL_FLAGS_STEP 1<<4
+
+
+
+#define FALSE 0
+#define TRUE 1
+
 
 struct riscv_spinal_common {
 	struct jtag_tap *tap;
@@ -76,58 +85,56 @@ struct riscv_spinal_core_reg {
 	const char *name;
 	uint32_t list_num;   /* Index in register cache */
 	uint32_t spr_num;    /* Number in architecture's SPR space */
+	uint32_t inHaltOnly;
 	struct target *target;
 	struct riscv_spinal_common *riscv_spinal_common;
-	const char *feature; /* feature name in XML tdesc file */
-	const char *group;   /* register group in XML tdesc file */
 };
 
 
 struct riscv_spinal_core_reg_init {
 	const char *name;
 	uint32_t spr_num;    /* Number in architecture's SPR space */
-	const char *feature; /* feature name in XML tdesc file */
-	const char *group;   /* register group in XML tdesc file */
+	uint32_t inHaltOnly;
 };
 
 
 static struct riscv_spinal_core_reg *riscv_spinal_core_reg_list_arch_info;
 
 static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
-	{"r0"       , 512 + 0*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r1"       , 512 + 1*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r2"       , 512 + 2*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r3"       , 512 + 3*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r4"       , 512 + 4*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r5"       , 512 + 5*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r6"       , 512 + 6*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r7"       , 512 + 7*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r8"       , 512 + 8*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r9"       , 512 + 9*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r10"      , 512 + 10*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r11"      , 512 + 11*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r12"      , 512 + 12*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r13"      , 512 + 13*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r14"      , 512 + 14*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r15"      , 512 + 15*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r16"      , 512 + 16*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r17"      , 512 + 17*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r18"      , 512 + 18*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r19"      , 512 + 19*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r20"      , 512 + 20*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r21"      , 512 + 21*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r22"      , 512 + 22*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r23"      , 512 + 23*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r24"      , 512 + 24*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r25"      , 512 + 25*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r26"      , 512 + 26*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r27"      , 512 + 27*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r28"      , 512 + 28*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r29"      , 512 + 29*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r30"      , 512 + 30*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"r31"      , 512 + 31*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"pc"       , 2*4, "org.gnu.gdb.riscv_spinal", NULL},
-	{"flags"    , 0*4, "org.gnu.gdb.riscv_spinal", NULL}
+	{"r0"       , 0   + 0*4, TRUE},
+	{"r1"       , 0   + 1*4, TRUE},
+	{"r2"       , 0   + 2*4, TRUE},
+	{"r3"       , 0   + 3*4, TRUE},
+	{"r4"       , 0   + 4*4, TRUE},
+	{"r5"       , 0   + 5*4, TRUE},
+	{"r6"       , 0   + 6*4, TRUE},
+	{"r7"       , 0   + 7*4, TRUE},
+	{"r8"       , 0   + 8*4, TRUE},
+	{"r9"       , 0   + 9*4, TRUE},
+	{"r10"      , 0   + 10*4, TRUE},
+	{"r11"      , 0   + 11*4, TRUE},
+	{"r12"      , 0   + 12*4, TRUE},
+	{"r13"      , 0   + 13*4, TRUE},
+	{"r14"      , 0   + 14*4, TRUE},
+	{"r15"      , 0   + 15*4, TRUE},
+	{"r16"      , 0   + 16*4, TRUE},
+	{"r17"      , 0   + 17*4, TRUE},
+	{"r18"      , 0   + 18*4, TRUE},
+	{"r19"      , 0   + 19*4, TRUE},
+	{"r20"      , 0   + 20*4, TRUE},
+	{"r21"      , 0   + 21*4, TRUE},
+	{"r22"      , 0   + 22*4, TRUE},
+	{"r23"      , 0   + 23*4, TRUE},
+	{"r24"      , 0   + 24*4, TRUE},
+	{"r25"      , 0   + 25*4, TRUE},
+	{"r26"      , 0   + 26*4, TRUE},
+	{"r27"      , 0   + 27*4, TRUE},
+	{"r28"      , 0   + 28*4, TRUE},
+	{"r29"      , 0   + 29*4, TRUE},
+	{"r30"      , 0   + 30*4, TRUE},
+	{"r31"      , 0   + 31*4, TRUE},
+	{"pc"       , 512 + 1*4, TRUE},
+	{"flags"    , 512 + 0*4, FALSE}
 
 
 };
@@ -145,8 +152,7 @@ static int riscv_spinal_create_reg_list(struct target *target)
 	for (int i = 0; i < (int)ARRAY_SIZE(riscv_spinal_init_reg_list); i++) {
 		riscv_spinal_core_reg_list_arch_info[i].name = riscv_spinal_init_reg_list[i].name;
 		riscv_spinal_core_reg_list_arch_info[i].spr_num = riscv_spinal_init_reg_list[i].spr_num;
-		riscv_spinal_core_reg_list_arch_info[i].group = riscv_spinal_init_reg_list[i].group;
-		riscv_spinal_core_reg_list_arch_info[i].feature = riscv_spinal_init_reg_list[i].feature;
+		riscv_spinal_core_reg_list_arch_info[i].inHaltOnly = riscv_spinal_init_reg_list[i].inHaltOnly;
 		riscv_spinal_core_reg_list_arch_info[i].list_num = i;
 		riscv_spinal_core_reg_list_arch_info[i].target = NULL;
 		riscv_spinal_core_reg_list_arch_info[i].riscv_spinal_common = NULL;
@@ -187,7 +193,7 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 
 	LOG_DEBUG("-");
 
-	if (target->state != TARGET_HALTED)
+	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
 	int rsp =  riscv_spinal_read32(target,riscv_spinal->cpuAddress + riscv_spinal_core_reg_list_arch_info[reg->number].spr_num,reg->value);
@@ -206,10 +212,11 @@ static int riscv_spinal_set_core_reg(struct reg *reg, uint8_t *buf)
 
 	LOG_DEBUG("-");
 
-	if (target->state != TARGET_HALTED)
+	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
 	if (riscv_spinal_reg->list_num < RISCV_SPINAL_NUM_CORE_REGS) {
+		*((uint32_t*)reg->value) = *((uint32_t*)buf);
 		int rsp = riscv_spinal_write32(target,riscv_spinal->cpuAddress + riscv_spinal_core_reg_list_arch_info[reg->number].spr_num,value);
 		if(rsp != ERROR_OK) return rsp;
 	} else {
@@ -241,7 +248,7 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 	struct reg *reg_list = calloc(riscv_spinal->nb_regs, sizeof(struct reg));
 	struct riscv_spinal_core_reg *arch_info =
 		malloc((riscv_spinal->nb_regs) * sizeof(struct riscv_spinal_core_reg));
-	struct reg_feature *feature;
+
 
 	LOG_DEBUG("-");
 
@@ -259,12 +266,8 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 		arch_info[i].target = target;
 		arch_info[i].riscv_spinal_common = riscv_spinal;
 		reg_list[i].name = riscv_spinal_core_reg_list_arch_info[i].name;
-
-		feature = malloc(sizeof(struct reg_feature));
-		feature->name = riscv_spinal_core_reg_list_arch_info[i].feature;
-		reg_list[i].feature = feature;
-
-		reg_list[i].group = riscv_spinal_core_reg_list_arch_info[i].group;
+		reg_list[i].feature = NULL;
+		reg_list[i].group = NULL;
 		reg_list[i].size = 32;
 		reg_list[i].value = calloc(1, 4);
 		reg_list[i].dirty = 0;
@@ -403,16 +406,23 @@ static int riscv_spinal_halt(struct target *target)
 	return ERROR_OK;
 }
 
+static int riscv_spinal_is_running(struct target * target,uint32_t *running){
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	int rsp = riscv_spinal_get32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],running);
+	*running = (*running & RISCV_SPINAL_FLAGS_PIP_EMPTY) && !(*running & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT); // || !(*running & RISCV_SPINAL_FLAGS_HALT)
+	if (rsp != ERROR_OK) {
+		LOG_ERROR("Error while calling riscv_spinal_is_cpu_running");
+	}
+	return rsp;
+}
 
 static int riscv_spinal_poll(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	int retval;
 
 	uint32_t running;
-	retval = riscv_spinal_get32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],&running);
+	retval = riscv_spinal_is_running(target,&running);
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while calling riscv_spinal_is_cpu_running");
 		return retval;
 	}
 
@@ -559,7 +569,7 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	int rsp;
-	printf("YOLO riscv_spinal_read_memory\n");
+
 	LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);
 
@@ -580,7 +590,7 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 	idx = count;
 	tPtr = t;
 	while(idx--){
-		assert((tPtr[0] & 3) == 1); //"TAP communication problem"
+		if((tPtr[0] & 3) != 1) return ERROR_JTAG_DEVICE_ERROR; //"TAP communication problem"
 		bit_copy(buffer,0,tPtr,2,size*8);
 		tPtr += size + 1;
 		buffer += size;
@@ -611,7 +621,7 @@ static int riscv_spinal_write_memory(struct target *target, uint32_t address,
 }
 
 static int riscv_spinal_write32(struct target *target, uint32_t address,uint32_t data){
-	return riscv_spinal_write_memory(target,address,4,1,(uint8_t*)riscv_spinal_write_memory);
+	return riscv_spinal_write_memory(target,address,4,1,(uint8_t*)&data);
 }
 
 static int riscv_spinal_read32(struct target *target, uint32_t address,uint32_t *data){
@@ -764,8 +774,15 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 		}
 	}
 
-	/* Unstall time */
-	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],0);
+	/* clear pipeline */
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_PIP_FLUSH | RISCV_SPINAL_FLAGS_HALT);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error while unstalling the CPU");
+		return retval;
+	}
+
+	/* Unstall */
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],(step ? RISCV_SPINAL_FLAGS_STEP : 0));
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while unstalling the CPU");
 		return retval;
@@ -811,6 +828,57 @@ static int riscv_spinal_step(struct target *target, int current,
 
 }
 
+static int riscv_spinal_examine(struct target *target)
+{
+	if (!target_was_examined(target)) {
+
+		target_set_examined(target);
+
+		uint32_t running;
+		int retval = riscv_spinal_is_running(target,&running);
+
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Couldn't read the CPU state");
+			return retval;
+		} else {
+			if (running)
+				target->state = TARGET_RUNNING;
+			else {
+				LOG_DEBUG("Target is halted");
+
+				/* This is the first time we examine the target,
+				 * it is stalled and we don't know why. Let's
+				 * assume this is because of a debug reason.
+				 */
+				if (target->state == TARGET_UNKNOWN)
+					target->debug_reason = DBG_REASON_DBGRQ;
+
+				target->state = TARGET_HALTED;
+			}
+		}
+	}
+
+	return ERROR_OK;
+}
+
+static int riscv_spinal_soft_reset_halt(struct target *target)
+{
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	LOG_DEBUG("-");
+
+	int retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT | RISCV_SPINAL_FLAGS_RESET);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("soft_reset_halt ERROR");
+		return retval;
+	}
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("soft_reset_halt ERROR");
+		return retval;
+	}
+	return ERROR_OK;
+}
+
 
 
 struct target_type riscv_spinal_target = {
@@ -818,6 +886,7 @@ struct target_type riscv_spinal_target = {
 
 	.target_create = riscv_spinal_target_create,
 	.init_target = riscv_spinal_init_target,
+	.examine = riscv_spinal_examine,
 
 	.poll = riscv_spinal_poll,
 	.arch_state = riscv_spinal_arch_state,
@@ -832,6 +901,7 @@ struct target_type riscv_spinal_target = {
 
 	.assert_reset = riscv_spinal_assert_reset,
 	.deassert_reset = riscv_spinal_deassert_reset,
+	.soft_reset_halt = riscv_spinal_soft_reset_halt,
 
 	.read_memory = riscv_spinal_read_memory,
 	.write_memory = riscv_spinal_write_memory,
