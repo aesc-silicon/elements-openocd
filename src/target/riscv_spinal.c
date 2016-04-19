@@ -101,41 +101,140 @@ struct riscv_spinal_core_reg_init {
 
 static struct riscv_spinal_core_reg *riscv_spinal_core_reg_list_arch_info;
 
+
 static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
-	{"r0"       , 0   + 0*4, TRUE},
-	{"r1"       , 0   + 1*4, TRUE},
-	{"r2"       , 0   + 2*4, TRUE},
-	{"r3"       , 0   + 3*4, TRUE},
-	{"r4"       , 0   + 4*4, TRUE},
-	{"r5"       , 0   + 5*4, TRUE},
-	{"r6"       , 0   + 6*4, TRUE},
-	{"r7"       , 0   + 7*4, TRUE},
-	{"r8"       , 0   + 8*4, TRUE},
-	{"r9"       , 0   + 9*4, TRUE},
-	{"r10"      , 0   + 10*4, TRUE},
-	{"r11"      , 0   + 11*4, TRUE},
-	{"r12"      , 0   + 12*4, TRUE},
-	{"r13"      , 0   + 13*4, TRUE},
-	{"r14"      , 0   + 14*4, TRUE},
-	{"r15"      , 0   + 15*4, TRUE},
-	{"r16"      , 0   + 16*4, TRUE},
-	{"r17"      , 0   + 17*4, TRUE},
-	{"r18"      , 0   + 18*4, TRUE},
-	{"r19"      , 0   + 19*4, TRUE},
-	{"r20"      , 0   + 20*4, TRUE},
-	{"r21"      , 0   + 21*4, TRUE},
-	{"r22"      , 0   + 22*4, TRUE},
-	{"r23"      , 0   + 23*4, TRUE},
-	{"r24"      , 0   + 24*4, TRUE},
-	{"r25"      , 0   + 25*4, TRUE},
-	{"r26"      , 0   + 26*4, TRUE},
-	{"r27"      , 0   + 27*4, TRUE},
-	{"r28"      , 0   + 28*4, TRUE},
-	{"r29"      , 0   + 29*4, TRUE},
-	{"r30"      , 0   + 30*4, TRUE},
-	{"r31"      , 0   + 31*4, TRUE},
+	{"zero"    	  , 0   + 0*4, TRUE},
+	{"ra"	      , 0   + 1*4, TRUE},
+	{"sp"	      , 0   + 2*4, TRUE},
+	{"gp"	      , 0   + 3*4, TRUE},
+	{"tp"	      , 0   + 4*4, TRUE},
+	{"t0"	      , 0   + 5*4, TRUE},
+	{"t1"	      , 0   + 6*4, TRUE},
+	{"t2"	      , 0   + 7*4, TRUE},
+	{"fp"	      , 0   + 8*4, TRUE},
+	{"s1"	      , 0   + 9*4, TRUE},
+	{"a0"	      , 0   + 10*4, TRUE},
+	{"a1"	      , 0   + 11*4, TRUE},
+	{"a2"	      , 0   + 12*4, TRUE},
+	{"a3"	      , 0   + 13*4, TRUE},
+	{"a4"	      , 0   + 14*4, TRUE},
+	{"a5"	      , 0   + 15*4, TRUE},
+	{"a6"	      , 0   + 16*4, TRUE},
+	{"a7"	      , 0   + 17*4, TRUE},
+	{"s2"	      , 0   + 18*4, TRUE},
+	{"s3"	      , 0   + 19*4, TRUE},
+	{"s4"	      , 0   + 20*4, TRUE},
+	{"s5"	      , 0   + 21*4, TRUE},
+	{"s6"	      , 0   + 22*4, TRUE},
+	{"s7"	      , 0   + 23*4, TRUE},
+	{"s8"	      , 0   + 24*4, TRUE},
+	{"s9"	      , 0   + 25*4, TRUE},
+	{"s10"	      , 0   + 26*4, TRUE},
+	{"s11"	      , 0   + 27*4, TRUE},
+	{"t3"	      , 0   + 28*4, TRUE},
+	{"t4"	      , 0   + 29*4, TRUE},
+	{"t5"	      , 0   + 30*4, TRUE},
+	{"t6"	      , 0   + 31*4, TRUE},
 	{"pc"       , 512 + 1*4, TRUE},
-	{"flags"    , 512 + 0*4, FALSE}
+	{"flags"    , 512 + 0*4, FALSE},
+	{"ft0"	    , 0   + 0*4, FALSE},
+	{"ft1"	    , 0   + 0*4, FALSE},
+	{"ft2"	    , 0   + 0*4, FALSE},
+	{"ft3"	    , 0   + 0*4, FALSE},
+	{"ft4"	    , 0   + 0*4, FALSE},
+	{"ft5"	    , 0   + 0*4, FALSE},
+	{"ft6"	    , 0   + 0*4, FALSE},
+	{"ft7"	    , 0   + 0*4, FALSE},
+	{"fs0"	    , 0   + 0*4, FALSE},
+	{"fs1"	    , 0   + 0*4, FALSE},
+	{"fa0"	    , 0   + 0*4, FALSE},
+	{"fa1"	    , 0   + 0*4, FALSE},
+	{"fa2"	    , 0   + 0*4, FALSE},
+	{"fa3"	    , 0   + 0*4, FALSE},
+	{"fa4"	    , 0   + 0*4, FALSE},
+	{"fa5"	    , 0   + 0*4, FALSE},
+	{"fa6"	    , 0   + 0*4, FALSE},
+	{"fa7"	    , 0   + 0*4, FALSE},
+	{"fs2"	    , 0   + 0*4, FALSE},
+	{"fs3"	    , 0   + 0*4, FALSE},
+	{"fs4"	    , 0   + 0*4, FALSE},
+	{"fs5"	    , 0   + 0*4, FALSE},
+	{"fs6"	    , 0   + 0*4, FALSE},
+	{"fs7"	    , 0   + 0*4, FALSE},
+	{"fs8"	    , 0   + 0*4, FALSE},
+	{"fs9"	    , 0   + 0*4, FALSE},
+	{"fs10"	    , 0   + 0*4, FALSE},
+	{"fs11"	    , 0   + 0*4, FALSE},
+	{"ft8"	    , 0   + 0*4, FALSE},
+	{"ft9"	    , 0   + 0*4, FALSE},
+	{"ft10"	    , 0   + 0*4, FALSE},
+	{"ft11"	    , 0   + 0*4, FALSE},
+	{"fflags"	, 0   + 0*4, FALSE},
+	{"frm"		, 0   + 0*4, FALSE},
+	{"fcsr"		, 0   + 0*4, FALSE},
+	{"cycle"		, 0   + 0*4, FALSE},
+	{"time"		, 0   + 0*4, FALSE},
+	{"instret"	, 0   + 0*4, FALSE},
+	{"stats"		, 0   + 0*4, FALSE},
+	{"uarch0"	, 0   + 0*4, FALSE},
+	{"uarch1"	, 0   + 0*4, FALSE},
+	{"uarch2"	, 0   + 0*4, FALSE},
+	{"uarch3"	, 0   + 0*4, FALSE},
+	{"uarch4"	, 0   + 0*4, FALSE},
+	{"uarch5"	, 0   + 0*4, FALSE},
+	{"uarch6"	, 0   + 0*4, FALSE},
+	{"uarch7"	, 0   + 0*4, FALSE},
+	{"uarch8"	, 0   + 0*4, FALSE},
+	{"uarch9"	, 0   + 0*4, FALSE},
+	{"uarch10"	, 0   + 0*4, FALSE},
+	{"uarch11"	, 0   + 0*4, FALSE},
+	{"uarch12"	, 0   + 0*4, FALSE},
+	{"uarch13"	, 0   + 0*4, FALSE},
+	{"uarch14"	, 0   + 0*4, FALSE},
+	{"uarch15"	, 0   + 0*4, FALSE},
+	{"sstatus"	, 0   + 0*4, FALSE},
+	{"stvec"		, 0   + 0*4, FALSE},
+	{"sie"		, 0   + 0*4, FALSE},
+	{"stimecmp"	, 0   + 0*4, FALSE},
+	{"sscratch"	, 0   + 0*4, FALSE},
+	{"sepc"		, 0   + 0*4, FALSE},
+	{"sip"		, 0   + 0*4, FALSE},
+	{"sptbr"		, 0   + 0*4, FALSE},
+	{"sasid"		, 0   + 0*4, FALSE},
+	{"cyclew"	, 0   + 0*4, FALSE},
+	{"timew"		, 0   + 0*4, FALSE},
+	{"instretw"	, 0   + 0*4, FALSE},
+	{"stime"		, 0   + 0*4, FALSE},
+	{"scause"	, 0   + 0*4, FALSE},
+	{"sbadaddr"	, 0   + 0*4, FALSE},
+	{"stimew"	, 0   + 0*4, FALSE},
+	{"mstatus"	, 0   + 0*4, FALSE},
+	{"mtvec"		, 0   + 0*4, FALSE},
+	{"mtdeleg"	, 0   + 0*4, FALSE},
+	{"mie"		, 0   + 0*4, FALSE},
+	{"mtimecmp"	, 0   + 0*4, FALSE},
+	{"mscratch"	, 0   + 0*4, FALSE},
+	{"mepc"		, 0   + 0*4, FALSE},
+	{"mcause"	, 0   + 0*4, FALSE},
+	{"mbadaddr"	, 0   + 0*4, FALSE},
+	{"mip"		, 0   + 0*4, FALSE},
+	{"mtime"		, 0   + 0*4, FALSE},
+	{"mcpuid"	, 0   + 0*4, FALSE},
+	{"mimpid"	, 0   + 0*4, FALSE},
+	{"mhartid"	, 0   + 0*4, FALSE},
+	{"mtohost"	, 0   + 0*4, FALSE},
+	{"mfromhost"	, 0   + 0*4, FALSE},
+	{"mreset"	, 0   + 0*4, FALSE},
+	{"send_ipi"	, 0   + 0*4, FALSE},
+	{"cycleh"	, 0   + 0*4, FALSE},
+	{"timeh"		, 0   + 0*4, FALSE},
+	{"instreth"	, 0   + 0*4, FALSE},
+	{"cyclehw"	, 0   + 0*4, FALSE},
+	{"timehw"	, 0   + 0*4, FALSE},
+	{"instrethw", 0   + 0*4, FALSE},
+	{"stimeh"	, 0   + 0*4, FALSE},
+	{"stimehw"	, 0   + 0*4, FALSE},
+	{"mtimeh"	, 0   + 0*4, FALSE}
 
 
 };
@@ -192,6 +291,12 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 	struct target *target = riscv_spinal_reg->target;
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 
+	if(reg->number >= RISCV_SPINAL_NUM_CORE_REGS){
+		*(uint32_t*)reg->value = 0xFFFFFFFF;
+		reg->valid = 1;
+		reg->dirty = 0;
+		return ERROR_OK;
+	}
 	LOG_DEBUG("-");
 
 	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
@@ -222,6 +327,9 @@ static int riscv_spinal_set_core_reg(struct reg *reg, uint8_t *buf)
 	struct target *target = riscv_spinal_reg->target;
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	uint32_t value = buf_get_u32(buf, 0, 32);
+	if(reg->number >= RISCV_SPINAL_NUM_CORE_REGS){
+		return ERROR_OK;
+	}
 
 	LOG_DEBUG("-");
 
@@ -503,7 +611,7 @@ static int riscv_spinal_assert_reset(struct target *target)
 	printf("YOLO riscv_spinal_assert_reset\n");
 	target->state = TARGET_RESET;
 
-	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET);
+	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET | RISCV_SPINAL_FLAGS_HALT);
 	if(rsp != ERROR_OK) return rsp;
 
 
@@ -517,7 +625,7 @@ static int riscv_spinal_deassert_reset(struct target *target)
 	printf("YOLO riscv_spinal_deassert_reset\n");
 	target->state = TARGET_RUNNING;
 
-	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],0);
+	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT);
 	if(rsp != ERROR_OK) return rsp;
 
 	LOG_DEBUG("%s", __func__);
@@ -583,8 +691,8 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 {
 	int rsp;
 
-	LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
-		  "; size %" PRId32 "; count %" PRId32, address, size, count);
+	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
+		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
 	if (count == 0 || buffer == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -617,8 +725,8 @@ static int riscv_spinal_write_memory(struct target *target, uint32_t address,
 				const uint8_t *buffer)
 {
 	printf("YOLO riscv_spinal_write_memory\n");
-	LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
-		  "; size %" PRId32 "; count %" PRId32, address, size, count);
+	/*LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
+		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
 
 	if (count == 0 || buffer == NULL)
