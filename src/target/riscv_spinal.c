@@ -103,7 +103,7 @@ static struct riscv_spinal_core_reg *riscv_spinal_core_reg_list_arch_info;
 
 
 static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
-	{"zero"    	  , 0   + 0*4, TRUE},
+	/*{"zero"    	  , 0   + 0*4, TRUE},
 	{"ra"	      , 0   + 1*4, TRUE},
 	{"sp"	      , 0   + 2*4, TRUE},
 	{"gp"	      , 0   + 3*4, TRUE},
@@ -134,7 +134,39 @@ static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
 	{"t3"	      , 0   + 28*4, TRUE},
 	{"t4"	      , 0   + 29*4, TRUE},
 	{"t5"	      , 0   + 30*4, TRUE},
-	{"t6"	      , 0   + 31*4, TRUE},
+	{"t6"	      , 0   + 31*4, TRUE},*/
+	{"x0"    	  , 0   + 0*4, TRUE},
+	{"x1"	      , 0   + 1*4, TRUE},
+	{"x2"	      , 0   + 2*4, TRUE},
+	{"x3"	      , 0   + 3*4, TRUE},
+	{"x4"	      , 0   + 4*4, TRUE},
+	{"x5"	      , 0   + 5*4, TRUE},
+	{"x6"	      , 0   + 6*4, TRUE},
+	{"x7"	      , 0   + 7*4, TRUE},
+	{"x8"	      , 0   + 8*4, TRUE},
+	{"x9"	      , 0   + 9*4, TRUE},
+	{"x10"	      , 0   + 10*4, TRUE},
+	{"x11"	      , 0   + 11*4, TRUE},
+	{"x12"	      , 0   + 12*4, TRUE},
+	{"x13"	      , 0   + 13*4, TRUE},
+	{"x14"	      , 0   + 14*4, TRUE},
+	{"x15"	      , 0   + 15*4, TRUE},
+	{"x16"	      , 0   + 16*4, TRUE},
+	{"x17"	      , 0   + 17*4, TRUE},
+	{"x18"	      , 0   + 18*4, TRUE},
+	{"x19"	      , 0   + 19*4, TRUE},
+	{"x20"	      , 0   + 20*4, TRUE},
+	{"x21"	      , 0   + 21*4, TRUE},
+	{"x22"	      , 0   + 22*4, TRUE},
+	{"x23"	      , 0   + 23*4, TRUE},
+	{"x24"	      , 0   + 24*4, TRUE},
+	{"x25"	      , 0   + 25*4, TRUE},
+	{"x26"	      , 0   + 26*4, TRUE},
+	{"x27"	      , 0   + 27*4, TRUE},
+	{"x28"	      , 0   + 28*4, TRUE},
+	{"x29"	      , 0   + 29*4, TRUE},
+	{"x30"	      , 0   + 30*4, TRUE},
+	{"x31"	      , 0   + 31*4, TRUE},
 	{"pc"       , 512 + 1*4, TRUE},
 	{"flags"    , 512 + 0*4, FALSE},
 	{"ft0"	    , 0   + 0*4, FALSE},
@@ -302,7 +334,10 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
-	int rsp =  riscv_spinal_read32(target,riscv_spinal->cpuAddress + riscv_spinal_core_reg_list_arch_info[reg->number].spr_num,reg->value);
+	struct reg* regAccess = reg;
+	if(reg->number == RISCV_SPINAL_REG_R2)
+		regAccess = &target->reg_cache->reg_list[RISCV_SPINAL_REG_R8];  //TODO gdb workaround about SP and FP info locals
+	int rsp =  riscv_spinal_read32(target,riscv_spinal->cpuAddress + riscv_spinal_core_reg_list_arch_info[regAccess->number].spr_num,reg->value);
 	if(rsp != ERROR_OK) return rsp;
 
 	if(reg->number == RISCV_SPINAL_REG_PC){
