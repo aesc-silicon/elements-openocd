@@ -60,6 +60,7 @@ enum riscv_spinal_reg_nums {
 #define RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT 1<<3
 #define RISCV_SPINAL_FLAGS_STEP 1<<4
 #define RISCV_SPINAL_FLAGS_PC_INC 1<<5
+#define RISCV_SPINAL_FLAGS_ICACHE_FLUSH 1<<8
 
 
 
@@ -938,7 +939,7 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 	}
 
 	/* clear pipeline */
-	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_PIP_FLUSH | RISCV_SPINAL_FLAGS_HALT);
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_PIP_FLUSH | RISCV_SPINAL_FLAGS_ICACHE_FLUSH | RISCV_SPINAL_FLAGS_HALT);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while unstalling the CPU");
 		return retval;
