@@ -569,7 +569,7 @@ static int riscv_spinal_halt(struct target *target)
 		}
 	}
 
-	int retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT);
+	int retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return retval;
@@ -668,7 +668,7 @@ static int riscv_spinal_assert_reset(struct target *target)
 	printf("YOLO riscv_spinal_assert_reset\n");
 	target->state = TARGET_RESET;
 
-	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET | RISCV_SPINAL_FLAGS_HALT);
+	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_SET);
 	if(rsp != ERROR_OK) return rsp;
 
 
@@ -682,7 +682,7 @@ static int riscv_spinal_deassert_reset(struct target *target)
 	printf("YOLO riscv_spinal_deassert_reset\n");
 	target->state = TARGET_RUNNING;
 
-	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT);
+	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_CLEAR);
 	if(rsp != ERROR_OK) return rsp;
 
 	LOG_DEBUG("%s", __func__);
@@ -959,14 +959,20 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 	}
 
 	/* clear pipeline */
-	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_PIP_FLUSH | RISCV_SPINAL_FLAGS_ICACHE_FLUSH | RISCV_SPINAL_FLAGS_HALT);
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error while unstalling the CPU");
+		return retval;
+	}
+
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_PIP_FLUSH | RISCV_SPINAL_FLAGS_ICACHE_FLUSH);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while unstalling the CPU");
 		return retval;
 	}
 
 	/* Unstall */
-	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],(step ? RISCV_SPINAL_FLAGS_STEP : 0));
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_CLEAR | (step ? RISCV_SPINAL_FLAGS_STEP : 0));
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while unstalling the CPU");
 		return retval;
@@ -1050,16 +1056,17 @@ static int riscv_spinal_soft_reset_halt(struct target *target)
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	LOG_DEBUG("-");
 
-	int retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT | RISCV_SPINAL_FLAGS_RESET);
+	int retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET | RISCV_SPINAL_FLAGS_RESET_SET);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("soft_reset_halt ERROR");
 		return retval;
 	}
-	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT);
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_CLEAR);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("soft_reset_halt ERROR");
 		return retval;
 	}
+	target->state = TARGET_HALTED;
 	return ERROR_OK;
 }
 
