@@ -55,14 +55,18 @@ enum riscv_spinal_reg_nums {
 
 #define RISCV_SPINAL_FLAGS_RESET 1<<0
 #define RISCV_SPINAL_FLAGS_HALT 1<<1
-#define RISCV_SPINAL_FLAGS_PIP_EMPTY 1<<2
+#define RISCV_SPINAL_FLAGS_PIP_BUSY 1<<2
 #define RISCV_SPINAL_FLAGS_PIP_FLUSH 1<<2
 #define RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT 1<<3
 #define RISCV_SPINAL_FLAGS_STEP 1<<4
 #define RISCV_SPINAL_FLAGS_PC_INC 1<<5
 #define RISCV_SPINAL_FLAGS_ICACHE_FLUSH 1<<8
 
+#define RISCV_SPINAL_FLAGS_RESET_SET 1<<16
+#define RISCV_SPINAL_FLAGS_HALT_SET 1<<17
 
+#define RISCV_SPINAL_FLAGS_RESET_CLEAR 1<<24
+#define RISCV_SPINAL_FLAGS_HALT_CLEAR 1<<25
 
 #define FALSE 0
 #define TRUE 1
@@ -328,6 +332,7 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 		*(uint32_t*)reg->value = 0xFFFFFFFF;
 		reg->valid = 1;
 		reg->dirty = 0;
+		printf("**** get reg%d",reg->number);
 		return ERROR_OK;
 	}
 	LOG_DEBUG("-");
@@ -351,7 +356,12 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 				*(uint32_t*)reg->value += 4;
 			}
 		}
+		if(*(uint32_t*)reg->value == 0){
+			LOG_DEBUG("PC=0 ??");
+		}
+		printf("**** get PC=%d\n",*(uint32_t*)reg->value);
 	}
+
 	reg->valid = 1;
 	reg->dirty = 0;
 	return ERROR_OK;
@@ -368,7 +378,14 @@ static int riscv_spinal_set_core_reg(struct reg *reg, uint8_t *buf)
 	}
 
 	LOG_DEBUG("-");
-
+	if(reg->number == RISCV_SPINAL_REG_PC){
+		LOG_DEBUG("SET PC");
+		printf("**** set PC=%d\n",value);
+		if(value == 0){
+			LOG_DEBUG("PC=0 ??");
+			//return ERROR_OK;
+		}
+	}
 	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
@@ -566,7 +583,11 @@ static int riscv_spinal_halt(struct target *target)
 static int riscv_spinal_is_running(struct target * target,uint32_t *running){
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	int rsp = riscv_spinal_get32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],running);
-	*running = (*running & RISCV_SPINAL_FLAGS_PIP_EMPTY) && !(*running & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT); // || !(*running & RISCV_SPINAL_FLAGS_HALT)
+	//*running = (*running & RISCV_SPINAL_FLAGS_PIP_EMPTY) && !(*running & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT); // || !(*running & RISCV_SPINAL_FLAGS_HALT)
+	*running = !(
+				(!(*running & RISCV_SPINAL_FLAGS_PIP_BUSY) /*&& (*running & RISCV_SPINAL_FLAGS_HALT)*/)
+				|| (*running & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT)
+			); // || !(*running & RISCV_SPINAL_FLAGS_HALT)
 	if (rsp != ERROR_OK) {
 		LOG_ERROR("Error while calling riscv_spinal_is_cpu_running");
 	}
@@ -792,19 +813,18 @@ static int riscv_spinal_get_gdb_reg_list(struct target *target, struct reg **reg
 	printf("riscv_spinal_get_gdb_reg_list %d\n",reg_class);
 	if (reg_class == REG_CLASS_GENERAL) {
 		/* We will have this called whenever GDB connects. */
-		/*int retval = riscv_spinal_save_context(target);
+		int retval = riscv_spinal_save_context(target);
 		if (retval != ERROR_OK) {
 			LOG_ERROR("Error while calling riscv_spinalsave_context");
 			return retval;
-		}*/
+		}
 		*reg_list_size = RISCV_SPINAL_NUM_CORE_REGS;
-		/* this is free()'d back in gdb_server.c's gdb_get_register_packet() */
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 
 		for (int i = 0; i < RISCV_SPINAL_NUM_CORE_REGS; i++)
 			(*reg_list)[i] = &riscv_spinal->core_cache->reg_list[i];
 	} else {
-		printf("?????");
+		//printf("?????");
 		*reg_list_size = riscv_spinal->nb_regs;
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 		
