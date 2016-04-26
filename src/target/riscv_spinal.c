@@ -668,7 +668,7 @@ static int riscv_spinal_assert_reset(struct target *target)
 	printf("YOLO riscv_spinal_assert_reset\n");
 	target->state = TARGET_RESET;
 
-	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_SET);
+	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_SET | RISCV_SPINAL_FLAGS_HALT_SET);
 	if(rsp != ERROR_OK) return rsp;
 
 
@@ -1020,9 +1020,13 @@ static int riscv_spinal_step(struct target *target, int current,
 
 static int riscv_spinal_examine(struct target *target)
 {
+	LOG_DEBUG("riscv_spinal_examine");
 	if (!target_was_examined(target)) {
 
 		target_set_examined(target);
+		//Soft reset
+		riscv_spinal_assert_reset(target);
+		riscv_spinal_deassert_reset(target);
 
 		uint32_t running;
 		int retval = riscv_spinal_is_running(target,&running);
