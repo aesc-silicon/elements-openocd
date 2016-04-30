@@ -383,7 +383,7 @@ static int riscv_spinal_set_core_reg(struct reg *reg, uint8_t *buf)
 		printf("**** set PC=%d\n",value);
 		if(value == 0){
 			LOG_DEBUG("PC=0 ??");
-			//return ERROR_OK;
+	//		return ERROR_OK; //TODO not very good
 		}
 	}
 	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
@@ -586,6 +586,7 @@ static int riscv_spinal_is_running(struct target * target,uint32_t *running){
 	//*running = (*running & RISCV_SPINAL_FLAGS_PIP_EMPTY) && !(*running & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT); // || !(*running & RISCV_SPINAL_FLAGS_HALT)
 	*running = !(
 				(!(*running & RISCV_SPINAL_FLAGS_PIP_BUSY) /*&& (*running & RISCV_SPINAL_FLAGS_HALT)*/)
+				|| (*running & RISCV_SPINAL_FLAGS_HALT) //TODO not very good
 				|| (*running & RISCV_SPINAL_FLAGS_IS_IN_BREAKPOINT)
 			); // || !(*running & RISCV_SPINAL_FLAGS_HALT)
 	if (rsp != ERROR_OK) {
@@ -1021,12 +1022,22 @@ static int riscv_spinal_step(struct target *target, int current,
 static int riscv_spinal_examine(struct target *target)
 {
 	LOG_DEBUG("riscv_spinal_examine");
+	/*struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct reg *reg_list = calloc(riscv_spinal->nb_regs, sizeof(struct reg));
+
+	for (int i = 0; i < riscv_spinal->nb_regs; i++) {
+		reg_list[i].dirty = 0;
+		reg_list[i].valid = 0;
+	}*/
+
+
 	if (!target_was_examined(target)) {
 
 		target_set_examined(target);
 		//Soft reset
 		riscv_spinal_assert_reset(target);
 		riscv_spinal_deassert_reset(target);
+
 
 		uint32_t running;
 		int retval = riscv_spinal_is_running(target,&running);
