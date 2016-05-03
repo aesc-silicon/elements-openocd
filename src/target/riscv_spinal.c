@@ -313,7 +313,7 @@ static int riscv_spinal_target_create(struct target *target, Jim_Interp *interp)
 
 	struct riscv_spinal_common *riscv_spinal = calloc(1, sizeof(struct riscv_spinal_common));
 	target->arch_info = riscv_spinal;
-	riscv_spinal->cpuAddress = 0xF0001000;
+	riscv_spinal->cpuAddress = target->dbgbase;
 	riscv_spinal->tap = target->tap;
 	riscv_spinal_create_reg_list(target);
 
