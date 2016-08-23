@@ -714,7 +714,11 @@ static int riscv_spinal_assert_reset(struct target *target)
 	printf("YOLO riscv_spinal_assert_reset\n");
 	target->state = TARGET_RESET;
 
-	int rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_SET | RISCV_SPINAL_FLAGS_HALT_SET);
+	int rsp ;
+	rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET);
+	if(rsp != ERROR_OK) return rsp;
+
+	rsp = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_RESET_SET | RISCV_SPINAL_FLAGS_HALT_SET);
 	if(rsp != ERROR_OK) return rsp;
 
 
@@ -1103,7 +1107,15 @@ static int riscv_spinal_soft_reset_halt(struct target *target)
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	LOG_DEBUG("-");
 
-	int retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET | RISCV_SPINAL_FLAGS_RESET_SET);
+	int retval;
+
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("soft_reset_halt ERROR");
+		return retval;
+	}
+
+	retval = riscv_spinal_set32_core_reg(&riscv_spinal->core_cache->reg_list[RISCV_SPINAL_REG_FLAGS],RISCV_SPINAL_FLAGS_HALT_SET | RISCV_SPINAL_FLAGS_RESET_SET);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("soft_reset_halt ERROR");
 		return retval;
