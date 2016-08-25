@@ -752,10 +752,12 @@ static void riscv_spinal_memory_cmd(struct jtag_tap *tap, uint32_t address,uint3
 	switch(size){
 	case 1:
 		size = 0;
+		data &= 0xFF;
 		data = data | (data<<8)  | (data<<16)  | (data<<24);
 		break;
 	case 2:
 		size = 1;
+		data &= 0xFFFF;
 		data = data | (data<<16);
 		break;
 	case 4:
