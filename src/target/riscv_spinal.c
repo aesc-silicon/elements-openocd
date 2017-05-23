@@ -428,7 +428,7 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 	(*cache_p) = cache;
 	riscv_spinal->core_cache = cache;
 	riscv_spinal->arch_info = arch_info;
-	assert(sizeof(struct reg)*riscv_spinal->nb_regs == sizeof(riscv_spinal->regs));
+	assert(sizeof(struct reg)*riscv_spinal->nb_regs == sizeof(struct riscv_spinal_reg_mapping));
 	riscv_spinal->regs = (struct riscv_spinal_reg_mapping*)reg_list;
 
 	for (uint32_t i = 0; i < riscv_spinal->nb_regs; i++) {
@@ -451,7 +451,6 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 	return cache;
 }
 
-//YY
 static void riscv_spinal_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 {
 	struct scan_field field;
@@ -946,9 +945,10 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 		target_free_all_working_areas(target);
 
 	/* current ? continue on current pc : continue at <address> */
-
 	if (!current){
 		*((uint32_t*)riscv_spinal->regs->pc.value) = address;
+		riscv_spinal->regs->pc.valid = true;
+		riscv_spinal->regs->pc.dirty = true;
 	}
 
 

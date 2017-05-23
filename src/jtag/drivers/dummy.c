@@ -52,11 +52,11 @@ static void dummy_write(int tck, int tms, int tdi)
 
 			if (old_state != dummy_state) {
 				if (clock_count) {
-					LOG_DEBUG("dummy_tap: %d stable clocks", clock_count);
+				//	LOG_DEBUG("dummy_tap: %d stable clocks", clock_count);
 					clock_count = 0;
 				}
 
-				LOG_DEBUG("dummy_tap: %s", tap_state_name(dummy_state));
+				//LOG_DEBUG("dummy_tap: %s", tap_state_name(dummy_state));
 
 #if defined(DEBUG)
 				if (dummy_state == TAP_DRCAPTURE)
