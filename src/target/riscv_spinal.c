@@ -14,7 +14,14 @@
  ***************************************************************************/
 #include "riscv_spinal.h"
 
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
 
+extern int useDummyJtag(void);
 
 #define RISCV_SPINAL_FLAGS_RESET 1<<0
 #define RISCV_SPINAL_FLAGS_HALT 1<<1
@@ -42,7 +49,9 @@ struct riscv_spinal_common {
 	uint32_t nb_regs;
 	struct riscv_spinal_core_reg *arch_info;
 	uint32_t dbgBase;
-	uint32_t flags;
+	int clientSocket;
+	int useTCP;
+	//uint32_t flags;
 };
 
 static inline struct riscv_spinal_common *
@@ -315,8 +324,8 @@ static int riscv_spinal_target_create(struct target *target, Jim_Interp *interp)
 	target->arch_info = riscv_spinal;
 	riscv_spinal->dbgBase = target->dbgbase;
 	riscv_spinal->tap = target->tap;
+	riscv_spinal->clientSocket = 0;
 	riscv_spinal_create_reg_list(target);
-
 
 	return ERROR_OK;
 }
@@ -466,10 +475,46 @@ static void riscv_spinal_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 
 static int riscv_spinal_init_target(struct command_context *cmd_ctx, struct target *target)
 {
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	printf("YOLO riscv_spinal_init_target\n");
 	LOG_DEBUG("%s", __func__);
 
+
 	riscv_spinal_build_reg_cache(target);
+
+	riscv_spinal->useTCP = 0;
+	struct command *command = cmd_ctx->commands;
+	while(command != NULL){
+		if(strcmp(command->name,"dummy") == 0){
+			riscv_spinal->useTCP = 1;
+		}
+		command = command->next;
+	}
+	if(riscv_spinal->useTCP){
+		struct sockaddr_in serverAddr;
+		//---- Create the socket. The three arguments are: ----//
+		// 1) Internet domain 2) Stream socket 3) Default protocol (TCP in this case) //
+		riscv_spinal->clientSocket = socket(PF_INET, SOCK_STREAM, 0);
+
+		//---- Configure settings of the server address struct ----//
+		// Address family = Internet //
+		serverAddr.sin_family = AF_INET;
+		// Set port number, using htons function to use proper byte order //
+		serverAddr.sin_port = htons(7893);
+		// Set IP address to localhost //
+		serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+		// Set all bits of the padding field to 0 //
+		memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
+
+		//---- Connect the socket to the server using the address struct ----//
+		socklen_t addr_size = sizeof serverAddr;
+		if(connect(riscv_spinal->clientSocket, (struct sockaddr *) &serverAddr, addr_size) != 0){
+			LOG_DEBUG("Can't connect to debug server");
+			return ERROR_FAIL;
+		} else {
+			LOG_DEBUG("TCP connection to target etablished");
+		}
+	}
 
 	return ERROR_OK;
 }
@@ -711,12 +756,14 @@ static int riscv_spinal_deassert_reset(struct target *target)
 
 
 
-static void riscv_spinal_memory_cmd(struct jtag_tap *tap, uint32_t address,uint32_t data,int32_t size, int read)
+static void riscv_spinal_memory_cmd(struct target *target, uint32_t address,uint32_t data,int32_t size, int read)
 {
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct jtag_tap *tap = target->tap;
 	struct scan_field field;
 	uint8_t cmd[10];
 
-	riscv_spinal_set_instr(tap, 0x2);
+	if(!riscv_spinal->useTCP) riscv_spinal_set_instr(tap, 0x2);
 
 	uint8_t inst = 0x00;
 	switch(size){
@@ -749,21 +796,45 @@ static void riscv_spinal_memory_cmd(struct jtag_tap *tap, uint32_t address,uint3
 	field.in_value = NULL;
 	field.check_value = NULL;
 	field.check_mask = NULL;
-	jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
+	if(!riscv_spinal->useTCP)
+		jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
+	else {
+		uint8_t buffer[10];
+		buffer[0] = read ? 0 : 1;
+		buffer[1] = size;
+		*((uint32_t*) (buffer + 2)) = address;
+		*((uint32_t*) (buffer + 6)) = data;
+		send(riscv_spinal->clientSocket,buffer,10,0);
+	}
 }
 
-static void riscv_spinal_read_rsp(struct jtag_tap *tap,uint8_t *value)
+static void riscv_spinal_read_rsp(struct target *target,uint8_t *value)
 {
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct jtag_tap *tap = target->tap;
 	struct scan_field field;
-	riscv_spinal_set_instr(tap, 0x03);
-
 	field.num_bits = 34;
 	field.out_value = NULL;
 	field.in_value = value;
 	field.check_value = NULL;
 	field.check_mask = NULL;
-	jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
+
+	if(!riscv_spinal->useTCP) {
+		riscv_spinal_set_instr(tap, 0x03);
+		jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
+	} else {
+		uint32_t buffer;
+		if(recv(riscv_spinal->clientSocket, &buffer, 4, 0) == 4){
+			value[0] = 1;
+			bit_copy(value,2,(uint8_t *) &buffer,0,4);
+		} else{
+			LOG_ERROR("???");
+			value[0] = 0;
+		}
+	}
 }
+
+
 
 static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
@@ -780,8 +851,8 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 	uint8_t *tPtr = t;
 	uint32_t idx = count;
 	while (idx--) {
-		riscv_spinal_memory_cmd(target->tap, address,address,size, 1);
-		riscv_spinal_read_rsp(target->tap,tPtr);
+		riscv_spinal_memory_cmd(target, address,address,size, 1);
+		riscv_spinal_read_rsp(target,tPtr);
 		address += size;
 		tPtr += size + 1;
 	}
@@ -812,7 +883,7 @@ static int riscv_spinal_write_memory(struct target *target, uint32_t address,
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	while (count--) {
-		riscv_spinal_memory_cmd(target->tap, address,*((uint32_t*)buffer),size, 0);
+		riscv_spinal_memory_cmd(target, address,*((uint32_t*)buffer),size, 0);
 		address += size;
 		buffer += size;
 	}
