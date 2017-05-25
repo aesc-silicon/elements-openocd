@@ -342,7 +342,7 @@ int riscv_spinal_write_regfile(struct target* target,uint32_t regId,uint32_t val
 	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x37 | (1 << 7) | high)) != ERROR_OK) //LUI x1, high
 		return error;
 
-	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (1 << 7) | (1 << 15) | low)) != ERROR_OK) //ADDI x1, x1, low
+	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (1 << 7) | (1 << 15) | (low << 20))) != ERROR_OK) //ADDI x1, x1, low
 		return error;
 	return ERROR_OK;
 
@@ -826,7 +826,7 @@ static void riscv_spinal_read_rsp(struct target *target,uint8_t *value)
 		uint32_t buffer;
 		if(recv(riscv_spinal->clientSocket, &buffer, 4, 0) == 4){
 			value[0] = 1;
-			bit_copy(value,2,(uint8_t *) &buffer,0,4);
+			bit_copy(value,2,(uint8_t *) &buffer,0,32);
 		} else{
 			LOG_ERROR("???");
 			value[0] = 0;
@@ -840,7 +840,9 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	int rsp;
-
+	if(address < 16){
+		printf("!!\n");
+	}
 	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
