@@ -840,9 +840,6 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	int rsp;
-	if(address < 16){
-		printf("!!\n");
-	}
 	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
