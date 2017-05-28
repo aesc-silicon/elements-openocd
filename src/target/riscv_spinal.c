@@ -185,7 +185,7 @@ static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
 	{"x29"	      , 0   + 29*4, FALSE},
 	{"x30"	      , 0   + 30*4, FALSE},
 	{"x31"	      , 0   + 31*4, FALSE},
-	{"pc"       , 512 + 1*4, FALSE}/*,
+	{"pc"       , 512 + 1*4, FALSE},
 	{"ft0"	    , 0   + 0*4, FALSE},
 	{"ft1"	    , 0   + 0*4, FALSE},
 	{"ft2"	    , 0   + 0*4, FALSE},
@@ -283,7 +283,7 @@ static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
 	{"instrethw", 0   + 0*4, FALSE},
 	{"stimeh"	, 0   + 0*4, FALSE},
 	{"stimehw"	, 0   + 0*4, FALSE},
-	{"mtimeh"	, 0   + 0*4, FALSE}*/
+	{"mtimeh"	, 0   + 0*4, FALSE}
 
 
 };
@@ -370,7 +370,9 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 			if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
 				return error;
 		}else{
-			return ERROR_FAIL;
+			*((uint32_t*)reg->value) = 0xDEADBEEF;
+			//YY
+			//return ERROR_FAIL;
 		}
 
 		reg->valid = true;
@@ -437,7 +439,7 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 	(*cache_p) = cache;
 	riscv_spinal->core_cache = cache;
 	riscv_spinal->arch_info = arch_info;
-	assert(sizeof(struct reg)*riscv_spinal->nb_regs == sizeof(struct riscv_spinal_reg_mapping));
+	assert(sizeof(struct reg)*riscv_spinal->nb_regs >= sizeof(struct riscv_spinal_reg_mapping));
 	riscv_spinal->regs = (struct riscv_spinal_reg_mapping*)reg_list;
 
 	for (uint32_t i = 0; i < riscv_spinal->nb_regs; i++) {
@@ -546,7 +548,7 @@ static int riscv_spinal_save_context(struct target *target)
 		if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase+4,(uint32_t*)reg->value)) != ERROR_OK)
 			return error;
 		reg->valid = 1;
-		reg->dirty = 0;
+		reg->dirty = 1;
 	}
 
 	//Store x1 to allow its override when the CPU is halted
