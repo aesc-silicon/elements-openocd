@@ -50,6 +50,7 @@ struct riscv_spinal_common {
 	uint32_t dbgBase;
 	int clientSocket;
 	int useTCP;
+	uint32_t readWaitCycles;
 	//uint32_t flags;
 };
 
@@ -324,7 +325,9 @@ static int riscv_spinal_target_create(struct target *target, Jim_Interp *interp)
 	riscv_spinal->dbgBase = target->dbgbase;
 	riscv_spinal->tap = target->tap;
 	riscv_spinal->clientSocket = 0;
+	riscv_spinal->readWaitCycles = 10;
 	riscv_spinal_create_reg_list(target);
+
 
 	return ERROR_OK;
 }
@@ -560,12 +563,12 @@ static int riscv_spinal_flush_caches(struct target *target)
 	//if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13)) != ERROR_OK) //NOP
 	//	return error;
 
-	/*for(uint32_t idx = 0;idx < 4096;idx += 32){
+	for(uint32_t idx = 0;idx < 4096;idx += 32){
 		if((error = riscv_spinal_write_regfile(target,1,idx)) != ERROR_OK)
 			return error;
 		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x7000500F + (1 << 15))) != ERROR_OK) //Clean invalid instruction cache way x1
 			return error;
-	}*/
+	}
 	return ERROR_OK;
 }
 
@@ -820,14 +823,14 @@ static void riscv_spinal_memory_cmd(struct target *target, uint32_t address,uint
 		break;
 	}
     uint8_t write = read ? 0 : 1;
-
-	field.num_bits = 8+32+32+1+2;
+    uint32_t waitCycles = write ? 0 : riscv_spinal->readWaitCycles;
+	field.num_bits = 8+32+32+1+2 + waitCycles;
 	field.out_value = cmd;
 	bit_copy(cmd,0,&inst,0,8);
-	bit_copy(cmd,8,(uint8_t*)&address,0,32);
-	bit_copy(cmd,40,(uint8_t*)&data,0,32);
-	bit_copy(cmd,72,&write,0,1);
-	bit_copy(cmd,73,(uint8_t*)&size,0,2);
+	bit_copy(cmd,8 + waitCycles,(uint8_t*)&address,0,32);
+	bit_copy(cmd,40 + waitCycles,(uint8_t*)&data,0,32);
+	bit_copy(cmd,72 + waitCycles,&write,0,1);
+	bit_copy(cmd,73 + waitCycles,(uint8_t*)&size,0,2);
 	field.in_value = NULL;
 	field.check_value = NULL;
 	field.check_mask = NULL;
@@ -1209,6 +1212,39 @@ static int riscv_spinal_remove_watchpoint(struct target *target,
 	return ERROR_OK;
 }
 
+
+COMMAND_HANDLER(riscv_spinal_handle_readWaitCycles_command)
+{
+	if(CMD_ARGC != 1)
+		return ERROR_COMMAND_ARGUMENT_INVALID;
+	struct target* target = get_current_target(CMD_CTX);
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], riscv_spinal->readWaitCycles);
+	return ERROR_OK;
+}
+
+static const struct command_registration riscv_spinal_exec_command_handlers[] = {
+
+	{
+		.name = "readWaitCycles",
+		.handler = riscv_spinal_handle_readWaitCycles_command,
+		.mode = COMMAND_CONFIG,
+		.help = "Number of JTAG cycle to wait before getting jtag read responses",
+		.usage = "value",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+const struct command_registration riscv_spinal_command_handlers[] = {
+	{
+		.name = "riscv_spinal",
+		.mode = COMMAND_ANY,
+		.help = "riscv_spinal command group",
+		.usage = "",
+		.chain = riscv_spinal_exec_command_handlers,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
 struct target_type riscv_spinal_target = {
 	.name = "riscv_spinal",
 
@@ -1228,6 +1264,8 @@ struct target_type riscv_spinal_target = {
 	.remove_breakpoint = riscv_spinal_remove_breakpoint,
 	.add_watchpoint = riscv_spinal_add_watchpoint,
 	.remove_watchpoint = riscv_spinal_remove_watchpoint,
+
+	.commands = riscv_spinal_command_handlers,
 
 	.assert_reset = riscv_spinal_assert_reset,
 	.deassert_reset = riscv_spinal_deassert_reset,
