@@ -26,7 +26,6 @@ extern int useDummyJtag(void);
 #define RISCV_SPINAL_FLAGS_RESET 1<<0
 #define RISCV_SPINAL_FLAGS_HALT 1<<1
 #define RISCV_SPINAL_FLAGS_PIP_BUSY 1<<2
-#define RISCV_SPINAL_FLAGS_PIP_FLUSH 1<<2
 #define RISCV_SPINAL_FLAGS_HALTED_BY_BREAK 1<<3
 #define RISCV_SPINAL_FLAGS_STEP 1<<4
 #define RISCV_SPINAL_FLAGS_PC_INC 1<<5
@@ -529,7 +528,46 @@ static int riscv_spinal_arch_state(struct target *target)
 }
 
 
+static int riscv_spinal_is_running(struct target * target,uint32_t *running){
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	uint32_t flags;
+	int error;
+	if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase,&flags)) != ERROR_OK){
+		LOG_ERROR("Error while calling riscv_spinal_is_cpu_running");
+		return error;
+	}
+	*running = (flags & RISCV_SPINAL_FLAGS_PIP_BUSY) || !(flags & RISCV_SPINAL_FLAGS_HALT);
 
+	return ERROR_OK;
+}
+
+
+static int riscv_spinal_flush_caches(struct target *target)
+{
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	int error;
+	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x400F)) != ERROR_OK) //invalide instruction cache
+		return error;
+
+
+	while(1){
+		uint32_t running;
+		if((error = riscv_spinal_is_running(target,&running)) != ERROR_OK) //Flush instruction cache
+			return error;
+		if(!running)
+			break;
+	}
+	//if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13)) != ERROR_OK) //NOP
+	//	return error;
+
+	/*for(uint32_t idx = 0;idx < 4096;idx += 32){
+		if((error = riscv_spinal_write_regfile(target,1,idx)) != ERROR_OK)
+			return error;
+		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x7000500F + (1 << 15))) != ERROR_OK) //Clean invalid instruction cache way x1
+			return error;
+	}*/
+	return ERROR_OK;
+}
 
 static int riscv_spinal_save_context(struct target *target)
 {
@@ -560,8 +598,13 @@ static int riscv_spinal_save_context(struct target *target)
 		reg->dirty = 1; //For safety
 	}
 
+	if((error = riscv_spinal_flush_caches(target)) != ERROR_OK) //Flush instruction cache
+		return error;
+
 	return ERROR_OK;
 }
+
+
 
 static int riscv_spinal_restore_context(struct target *target)
 {
@@ -587,6 +630,8 @@ static int riscv_spinal_restore_context(struct target *target)
 			reg->dirty = false;
 		}
 	}
+
+
 
 	return ERROR_OK;
 }
@@ -643,18 +688,6 @@ static int riscv_spinal_halt(struct target *target)
 	return ERROR_OK;
 }
 
-static int riscv_spinal_is_running(struct target * target,uint32_t *running){
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
-	uint32_t flags;
-	int error;
-	if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase,&flags)) != ERROR_OK){
-		LOG_ERROR("Error while calling riscv_spinal_is_cpu_running");
-		return error;
-	}
-	*running = (flags & RISCV_SPINAL_FLAGS_PIP_BUSY) || !(flags & RISCV_SPINAL_FLAGS_HALT);
-
-	return ERROR_OK;
-}
 
 static int riscv_spinal_poll(struct target *target)
 {

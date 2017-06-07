@@ -59,6 +59,7 @@ endif
 if DUMMY
 DRIVERFILES += dummy.c
 endif
+DRIVERFILES += jtag_tcp.c
 if FT2232_DRIVER
 DRIVERFILES += ft2232.c
 endif
