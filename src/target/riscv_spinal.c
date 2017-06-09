@@ -39,6 +39,10 @@
 #define FALSE 0
 #define TRUE 1
 
+struct BusInfo{
+	uint32_t flushInstructionsSize;
+	uint32_t *flushInstructions;
+};
 
 struct riscv_spinal_common {
 	struct jtag_tap *tap;
@@ -53,6 +57,7 @@ struct riscv_spinal_common {
 	uint32_t readWaitCycles;
 	char* cpuConfigFile;
 	//uint32_t flags;
+	struct BusInfo* iBus, *dBus;
 };
 
 static inline struct riscv_spinal_common *
@@ -470,10 +475,60 @@ static void riscv_spinal_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 	free(t);
 }
 
+static void riscv_spinal_yaml_ignore_block(yaml_parser_t *parser){
+	yaml_token_t  token;
+	int32_t level = 0;
+	while(1){
+		yaml_parser_scan(parser, &token);
+		switch(token.type){
+		case YAML_BLOCK_SEQUENCE_START_TOKEN: level++; break;
+		case YAML_BLOCK_ENTRY_TOKEN:          level++; break;
+		case YAML_BLOCK_END_TOKEN:            level--; break;
+		default: break;
+		}
+
+		if(level == -1)
+			break;
+	}
+}
+
+
+static void riscv_spinal_parse_busInfo(yaml_parser_t *parser, struct BusInfo *busInfo){
+	yaml_token_t  token;
+	busInfo->flushInstructions = NULL;
+	while(1){
+		yaml_parser_scan(parser, &token);
+		switch(token.type){
+			case YAML_SCALAR_TOKEN:
+				if(strcmp((char*)token.data.scalar.value,"flushInstructions") == 0){
+					busInfo->flushInstructions = malloc(4*4096);
+					busInfo->flushInstructionsSize = 0;
+					while(1){
+						yaml_parser_scan(parser, &token);
+						switch(token.type){
+							case YAML_SCALAR_TOKEN:
+								busInfo->flushInstructions[busInfo->flushInstructionsSize] = atoi((char*)token.data.scalar.value);
+								busInfo->flushInstructionsSize++;
+								assert(busInfo->flushInstructionsSize <= 4096);
+								break;
+							default: break;
+						}
+						if(token.type == YAML_FLOW_SEQUENCE_END_TOKEN)
+							break;
+					}
+				}
+			break;
+			default: break;
+		}
+		if(busInfo->flushInstructions != NULL)
+			break;
+	}
+}
+
 static int riscv_spinal_parse_cpu_file(struct command_context *cmd_ctx, struct target *target){
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	yaml_parser_t parser;
-	yaml_event_t event;
+	yaml_token_t  token;
 	int done = 0;
 	yaml_parser_initialize(&parser);
 
@@ -488,20 +543,31 @@ static int riscv_spinal_parse_cpu_file(struct command_context *cmd_ctx, struct t
 	while (!done) {
 
 		/* Get the next event. */
-		if (!yaml_parser_parse(&parser, &event))
+		if (!yaml_parser_scan(&parser, &token))
 			goto error;
 
-		/*
-		  ...
-		  Process the event.
-		  ...
-		*/
+		switch(token.type){
+			case YAML_SCALAR_TOKEN:
+				if(strcmp((char*)token.data.scalar.value,"iBus") == 0){
+					riscv_spinal->iBus = malloc(sizeof(struct BusInfo));
+					riscv_spinal_parse_busInfo(&parser, riscv_spinal->iBus);
+				}
+				if(strcmp((char*)token.data.scalar.value,"dBus") == 0){
+					riscv_spinal->dBus = malloc(sizeof(struct BusInfo));
+					riscv_spinal_parse_busInfo(&parser, riscv_spinal->dBus);
+				}
+				break;
+			case YAML_BLOCK_ENTRY_TOKEN: riscv_spinal_yaml_ignore_block(&parser); break;
+			default: break;
+		}
 
-		/* Are we finished? */
-		done = (event.type == YAML_STREAM_END_EVENT);
 
 		/* The application is responsible for destroying the event object. */
-		yaml_event_delete(&event);
+
+	    if(token.type != YAML_STREAM_END_TOKEN)
+	      yaml_token_delete(&token);
+	    else
+	    	done = 1;
 
 	}
 
@@ -524,6 +590,8 @@ static int riscv_spinal_init_target(struct command_context *cmd_ctx, struct targ
 	printf("YOLO riscv_spinal_init_target\n");
 	LOG_DEBUG("%s", __func__);
 
+	riscv_spinal->iBus = NULL;
+	riscv_spinal->dBus = NULL;
 	if(riscv_spinal_parse_cpu_file(cmd_ctx, target))
 		return ERROR_FAIL;
 
@@ -587,33 +655,32 @@ static int riscv_spinal_is_running(struct target * target,uint32_t *running){
 	return ERROR_OK;
 }
 
+static int riscv_spinal_flush_bus(struct target *target,struct BusInfo * busInfo){
+	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	int error;
+	if(!busInfo) return ERROR_OK;
+	for(uint32_t idx = 0;idx < busInfo->flushInstructionsSize;idx++){
+		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,busInfo->flushInstructions[idx])) != ERROR_OK)
+			return error;
+	}
+	while(1){
+		uint32_t running;
+		if((error = riscv_spinal_is_running(target,&running)) != ERROR_OK)
+			return error;
+		if(!running)
+			break;
+	}
+	return ERROR_OK;
+}
 
 static int riscv_spinal_flush_caches(struct target *target)
 {
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	int error;
-	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x400F)) != ERROR_OK) //invalide instruction cache
+	if((error = riscv_spinal_flush_bus(target,riscv_spinal->iBus)) != ERROR_OK)
 		return error;
-
-
-	while(1){
-		uint32_t running;
-		if((error = riscv_spinal_is_running(target,&running)) != ERROR_OK) //Flush instruction cache
-			return error;
-		if(!running)
-			break;
-	}
-	//if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13)) != ERROR_OK) //NOP
-	//	return error;
-
-	if((error = riscv_spinal_write_regfile(target,1,0)) != ERROR_OK)
+	if((error = riscv_spinal_flush_bus(target,riscv_spinal->dBus)) != ERROR_OK)
 		return error;
-	for(uint32_t idx = 0;idx < 4096;idx += 32){
-		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 + (1 << 7)  + (1 << 15) + (32 << 20))) != ERROR_OK) //addi x1, x1, 32
-			return error;
-		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x7000500F + (1 << 15))) != ERROR_OK) //Clean invalid instruction cache way x1
-			return error;
-	}
 	return ERROR_OK;
 }
 
