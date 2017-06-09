@@ -219,6 +219,24 @@ static int jtag_tcp_scan_rsp(bool ir_scan, enum scan_type type, uint8_t *buffer,
 	return ERROR_OK;
 }
 
+static int jtag_tcp_stableclocks(int num_cycles)
+{
+	int tms = (tap_get_state() == TAP_RESET ? 1 : 0);
+	int i;
+	uint8_t txBuffer[num_cycles*2];
+
+	/* send num_cycles clocks onto the cable */
+	for (i = 0; i < num_cycles; i++) {
+		txBuffer[i*2 + 0] = (tms ? TMS_SET : 0);
+		txBuffer[i*2 + 1] = (tms ? TMS_SET : 0) | TCK_SET;
+	}
+
+	if(send(clientSocket,txBuffer,num_cycles*2, 0) <= 0)
+		return ERROR_FAIL;
+
+	return ERROR_OK;
+}
+
 
 int jtag_tcp_execute_queue(void)
 {
@@ -250,17 +268,13 @@ int jtag_tcp_execute_queue(void)
 			if (buffer)
 				free(buffer);
 			break;
-
+		case JTAG_STABLECLOCKS:
+			retval = jtag_tcp_stableclocks(cmd->cmd.stableclocks->num_cycles);
+			break;
 			/*
 		case JTAG_RUNTEST:
 			retval = jtag_vpi_runtest(cmd->cmd.runtest->num_cycles,
 						  cmd->cmd.runtest->end_state);
-			break;
-		case JTAG_STABLECLOCKS:
-			retval = jtag_vpi_stableclocks(cmd->cmd.stableclocks->num_cycles);
-			break;
-		case JTAG_TLR_RESET:
-			retval = jtag_vpi_state_move(cmd->cmd.statemove->end_state);
 			break;
 		case JTAG_PATHMOVE:
 			retval = jtag_vpi_path_move(cmd->cmd.pathmove);
