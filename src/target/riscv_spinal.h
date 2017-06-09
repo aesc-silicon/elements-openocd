@@ -25,5 +25,9 @@
 static int riscv_spinal_read_memory(struct target *target, uint32_t address, uint32_t size, uint32_t count, uint8_t *buffer);
 static int riscv_spinal_write32(struct target *target, uint32_t address,uint32_t data);
 static int riscv_spinal_read32(struct target *target, uint32_t address,uint32_t *data);
+static void riscv_spinal_write32_no_execute(struct target *target, uint32_t address,uint32_t data);
+static void riscv_spinal_read32_no_execute(struct target *target, uint32_t address,uint32_t *data,uint8_t *flags);
+static void riscv_spinal_read_rsp_splited(struct target *target,uint32_t *data,uint8_t* flags);
+static int riscv_spinal_check_rsp_Flags(uint8_t flags);
 static int riscv_spinal_halt(struct target *target);
 #endif /* __RISCV_SPINAL_H__ */

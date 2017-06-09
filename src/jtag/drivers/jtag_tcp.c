@@ -166,7 +166,7 @@ static int jtag_tcp_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int
 	}
 	uint8_t txBuffer[scan_size*2];
 	for (bit_cnt = 0; bit_cnt < scan_size; bit_cnt++) {
-		int tms = (bit_cnt == scan_size-1) ? 1 : 0;
+		int tms = (bit_cnt == scan_size-1 && tap_get_state() != tap_get_end_state()) ? 1 : 0;
 		int tdi;
 		int bytec = bit_cnt/8;
 		int bcval = 1 << (bit_cnt % 8);
@@ -187,6 +187,21 @@ static int jtag_tcp_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int
 		return ERROR_FAIL;
 
 
+	if (tap_get_state() != tap_get_end_state()) {
+		/* we *KNOW* the above loop transitioned out of
+		 * the shift state, so we skip the first state
+		 * and move directly to the end state.
+		 */
+		jtag_tcp_state_move(1);
+	}
+
+	return ERROR_OK;
+}
+
+static int jtag_tcp_scan_rsp(bool ir_scan, enum scan_type type, uint8_t *buffer, int scan_size)
+{
+	int bit_cnt;
+
 	if (type != SCAN_OUT) {
 		for (bit_cnt = 0; bit_cnt < scan_size; bit_cnt++) {
 			uint8_t rxBuffer;
@@ -199,16 +214,6 @@ static int jtag_tcp_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int
 			else
 				buffer[bytec] &= ~bcval;
 		}
-	}
-
-
-
-	if (tap_get_state() != tap_get_end_state()) {
-		/* we *KNOW* the above loop transitioned out of
-		 * the shift state, so we skip the first state
-		 * and move directly to the end state.
-		 */
-		jtag_tcp_state_move(1);
 	}
 
 	return ERROR_OK;
@@ -242,8 +247,6 @@ int jtag_tcp_execute_queue(void)
 			type = jtag_scan_type(cmd->cmd.scan);
 			if (jtag_tcp_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size) != ERROR_OK)
 				retval = ERROR_JTAG_QUEUE_FAILED;
-			if (jtag_read_buffer(buffer, cmd->cmd.scan) != ERROR_OK)
-				retval = ERROR_JTAG_QUEUE_FAILED;
 			if (buffer)
 				free(buffer);
 			break;
@@ -268,6 +271,26 @@ int jtag_tcp_execute_queue(void)
 		default:
 			LOG_ERROR("unknow cmd ???");
 			retval = ERROR_FAIL;
+			break;
+		}
+	}
+
+	for (cmd = jtag_command_queue; retval == ERROR_OK && cmd != NULL;
+	     cmd = cmd->next) {
+		switch (cmd->type) {
+			break;
+		case JTAG_SCAN:
+			jtag_tcp_end_state(cmd->cmd.scan->end_state);
+			scan_size = jtag_build_buffer(cmd->cmd.scan, &buffer);
+			type = jtag_scan_type(cmd->cmd.scan);
+			if (jtag_tcp_scan_rsp(cmd->cmd.scan->ir_scan, type, buffer, scan_size) != ERROR_OK)
+				retval = ERROR_JTAG_QUEUE_FAILED;
+			if (jtag_read_buffer(buffer, cmd->cmd.scan) != ERROR_OK)
+				retval = ERROR_JTAG_QUEUE_FAILED;
+			if (buffer)
+				free(buffer);
+			break;
+		default:
 			break;
 		}
 	}
