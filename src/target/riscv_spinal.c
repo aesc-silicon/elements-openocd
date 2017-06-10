@@ -20,7 +20,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-
+#include <netinet/tcp.h>
 #include <yaml.h>
 
 #define RISCV_SPINAL_FLAGS_RESET 1<<0
@@ -610,6 +610,13 @@ static int riscv_spinal_init_target(struct command_context *cmd_ctx, struct targ
 		//---- Create the socket. The three arguments are: ----//
 		// 1) Internet domain 2) Stream socket 3) Default protocol (TCP in this case) //
 		riscv_spinal->clientSocket = socket(PF_INET, SOCK_STREAM, 0);
+		int flag = 1;
+		setsockopt(  riscv_spinal->clientSocket,            /* socket affected */
+					 IPPROTO_TCP,     /* set option at TCP level */
+					 TCP_NODELAY,     /* name of option */
+					 (char *) &flag,  /* the cast is historical
+											 cruft */
+					 sizeof(int));    /* length of option value */
 
 		//---- Configure settings of the server address struct ----//
 		// Address family = Internet //

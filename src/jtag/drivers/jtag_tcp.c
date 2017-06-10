@@ -31,6 +31,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include "hello.h"
+#include <netinet/tcp.h>
 
 /* my private tap controller state, which tracks state for calling code */
 static tap_state_t jtag_tcp_state;
@@ -74,6 +75,14 @@ static int jtag_tcp_init(void)
 	//---- Create the socket. The three arguments are: ----//
 	// 1) Internet domain 2) Stream socket 3) Default protocol (TCP in this case) //
 	clientSocket = socket(PF_INET, SOCK_STREAM, 0);
+
+	int flag = 1;
+	setsockopt(  clientSocket,            /* socket affected */
+				 IPPROTO_TCP,     /* set option at TCP level */
+				 TCP_NODELAY,     /* name of option */
+				 (char *) &flag,  /* the cast is historical
+										 cruft */
+				 sizeof(int));    /* length of option value */
 
 	//---- Configure settings of the server address struct ----//
 	struct sockaddr_in serverAddr;
