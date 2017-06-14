@@ -347,10 +347,10 @@ int riscv_spinal_write_regfile(struct target* target,uint32_t regId,uint32_t val
 		high += 0x1000;
 	}
 
-	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x37 | (1 << 7) | high)) != ERROR_OK) //LUI x1, high
+	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x37 | (regId << 7) | high)) != ERROR_OK) //LUI regId, high
 		return error;
 
-	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (1 << 7) | (1 << 15) | (low << 20))) != ERROR_OK) //ADDI x1, x1, low
+	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (regId << 7) | (regId << 15) | (low << 20))) != ERROR_OK) //ADDI regId, x1, low
 		return error;
 	return ERROR_OK;
 
@@ -667,9 +667,10 @@ static int riscv_spinal_flush_bus(struct target *target,struct BusInfo * busInfo
 	int error;
 	if(!busInfo) return ERROR_OK;
 	for(uint32_t idx = 0;idx < busInfo->flushInstructionsSize;idx++){
-		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,busInfo->flushInstructions[idx])) != ERROR_OK)
-			return error;
+		riscv_spinal_write32_no_execute(target,riscv_spinal->dbgBase + 4,busInfo->flushInstructions[idx]);
 	}
+	if((error = jtag_execute_queue()) != ERROR_OK)
+		return error;
 	while(1){
 		uint32_t running;
 		if((error = riscv_spinal_is_running(target,&running)) != ERROR_OK)
@@ -712,10 +713,20 @@ static int riscv_spinal_save_context(struct target *target)
 	}
 
 	//Read all common CPU registers, as debuggers will always ask them even if they don't need them.
+	/*for(uint32_t regId = 0;regId < 32;regId++){
+		struct reg* reg = &riscv_spinal->core_cache->reg_list[regId];
+
+		if(riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (reg->number << 15))) //ADDI x0, x?, 0
+			return ERROR_FAIL;
+		if(riscv_spinal_read32(target,riscv_spinal->dbgBase + 4,(uint32_t*)reg->value))
+			return ERROR_FAIL;
+
+		reg->valid = 1;
+		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
+	}*/
 	uint8_t flagsBuffer[32];
 	for(uint32_t regId = 0;regId < 32;regId++){
 		struct reg* reg = &riscv_spinal->core_cache->reg_list[regId];
-
 		riscv_spinal_write32_no_execute(target,riscv_spinal->dbgBase + 4,0x13 | (reg->number << 15)); //ADDI x0, x?, 0
 		riscv_spinal_read32_no_execute(target,riscv_spinal->dbgBase + 4,(uint32_t*)reg->value,flagsBuffer + regId);
 	}
@@ -1002,33 +1013,30 @@ static void riscv_spinal_read_rsp(struct target *target,uint8_t *value)
 }
 
 static int riscv_spinal_check_rsp_Flags(uint8_t flags){
-	return flags == 1 ? ERROR_OK : ERROR_FAIL;
+	return (flags & 0x3) == 1 ? ERROR_OK : ERROR_FAIL;
 }
 
 static void riscv_spinal_read_rsp_splited(struct target *target,uint32_t *data, uint8_t *flags)
 {
 	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
 	struct jtag_tap *tap = target->tap;
-	struct scan_field dataField;
-	dataField.num_bits = 32;
-	dataField.out_value = NULL;
-	dataField.in_value = (uint8_t*)data;
-	dataField.check_value = NULL;
-	dataField.check_mask = NULL;
+	struct scan_field feilds[2];
+	feilds[0].num_bits = 2;
+	feilds[0].out_value = NULL;
+	feilds[0].in_value = flags;
+	feilds[0].check_value = NULL;
+	feilds[0].check_mask = NULL;
 
-
-	struct scan_field flagsField;
-	flagsField.num_bits = 2;
-	flagsField.out_value = NULL;
-	flagsField.in_value = flags;
-	flagsField.check_value = NULL;
-	flagsField.check_mask = NULL;
+	feilds[1].num_bits = 32;
+	feilds[1].out_value = NULL;
+	feilds[1].in_value = (uint8_t*)data;
+	feilds[1].check_value = NULL;
+	feilds[1].check_mask = NULL;
 
 	if(!riscv_spinal->useTCP) {
 		jtag_add_clocks(riscv_spinal->readWaitCycles);
 		riscv_spinal_set_instr(tap, 0x03);
-		jtag_add_dr_scan(tap, 1, &flagsField, TAP_DRSHIFT);
-		jtag_add_dr_scan(tap, 1, &dataField, TAP_IDLE);
+		jtag_add_dr_scan(tap, 2, feilds, TAP_IDLE);
 	} else {
 		if(recv(riscv_spinal->clientSocket, &data, 4, 0) != 4){
 			LOG_ERROR("???");
@@ -1095,18 +1103,15 @@ static int riscv_spinal_write32(struct target *target, uint32_t address,uint32_t
 	return riscv_spinal_write_memory(target,address,4,1,(uint8_t*)&data);
 }
 
-static void riscv_spinal_write32_no_execute(struct target *target, uint32_t address,uint32_t data){
-		riscv_spinal_memory_cmd(target, address, data, 4, 0);
-}
 
 static int riscv_spinal_read32(struct target *target, uint32_t address,uint32_t *data){
 	return riscv_spinal_read_memory(target,address,4,1,(uint8_t*)data);
 }
 
+static void riscv_spinal_write32_no_execute(struct target *target, uint32_t address,uint32_t data){
+		riscv_spinal_memory_cmd(target, address, data, 4, 0);
+}
 static void riscv_spinal_read32_no_execute(struct target *target, uint32_t address,uint32_t *data,uint8_t *flags){
-	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
-		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
-
 	riscv_spinal_memory_cmd(target, address,address,4, 1);
 	riscv_spinal_read_rsp_splited(target,data,flags);
 }
