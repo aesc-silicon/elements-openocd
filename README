@@ -1,3 +1,27 @@
+In very short, VexRiscv
+===================
+
+Dependencies on Ubuntu 14:
+
+```sh
+sudo apt-get install libtool automake libusb-1.0.0-dev texinfo libusb-dev libyaml-dev
+```
+
+Build :
+
+```sh
+./bootstrap
+./configure --enable-ftdi --enable-dummy
+make
+#sudo make install
+```
+
+Added configuration files :
+- tcl/target/briey.cfg
+- tcl/target/vexriscv_sim.cfg
+- tcl/interface/jtag_tcp.cfg
+- tcl/interface/jtag/ft2232h_breakout.cfg
+
 Welcome to OpenOCD!
 ===================
 
