@@ -36,7 +36,7 @@ libtarget_la_SOURCES = \
 	$(MIPS32_SRC) \
 	$(NDS32_SRC) \
 	$(INTEL_IA32_SRC) \
-	$(RISCV_SPINAL_SRC) \
+	$(VEXRISCV_SRC) \
 	avrt.c \
 	dsp563xx.c \
 	dsp563xx_once.c \
@@ -53,8 +53,8 @@ TARGET_CORE_SRC = \
 	testee.c \
 	smp.c
 
-RISCV_SPINAL_SRC = \
-	riscv_spinal.c
+VEXRISCV_SRC = \
+	vexriscv.c
 
 ARMV4_5_SRC = \
 	armv4_5.c \
@@ -208,7 +208,7 @@ noinst_HEADERS = \
 	nds32_v3m.h \
 	nds32_aice.h \
 	lakemont.h \
-	x86_32_common.h
+	x86_32_common.h 
 
 ocddatadir = $(pkglibdir)
 nobase_dist_ocddata_DATA =

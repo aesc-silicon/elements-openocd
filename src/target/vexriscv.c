@@ -12,7 +12,7 @@
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
  ***************************************************************************/
-#include "riscv_spinal.h"
+#include "vexriscv.h"
 
 #include <stdio.h>
 #include <sys/socket.h>
@@ -23,18 +23,18 @@
 #include <netinet/tcp.h>
 #include <yaml.h>
 
-#define RISCV_SPINAL_FLAGS_RESET 1<<0
-#define RISCV_SPINAL_FLAGS_HALT 1<<1
-#define RISCV_SPINAL_FLAGS_PIP_BUSY 1<<2
-#define RISCV_SPINAL_FLAGS_HALTED_BY_BREAK 1<<3
-#define RISCV_SPINAL_FLAGS_STEP 1<<4
-#define RISCV_SPINAL_FLAGS_PC_INC 1<<5
+#define vexriscv_FLAGS_RESET 1<<0
+#define vexriscv_FLAGS_HALT 1<<1
+#define vexriscv_FLAGS_PIP_BUSY 1<<2
+#define vexriscv_FLAGS_HALTED_BY_BREAK 1<<3
+#define vexriscv_FLAGS_STEP 1<<4
+#define vexriscv_FLAGS_PC_INC 1<<5
 
-#define RISCV_SPINAL_FLAGS_RESET_SET 1<<16
-#define RISCV_SPINAL_FLAGS_HALT_SET 1<<17
+#define vexriscv_FLAGS_RESET_SET 1<<16
+#define vexriscv_FLAGS_HALT_SET 1<<17
 
-#define RISCV_SPINAL_FLAGS_RESET_CLEAR 1<<24
-#define RISCV_SPINAL_FLAGS_HALT_CLEAR 1<<25
+#define vexriscv_FLAGS_RESET_CLEAR 1<<24
+#define vexriscv_FLAGS_HALT_CLEAR 1<<25
 
 #define FALSE 0
 #define TRUE 1
@@ -44,13 +44,13 @@ struct BusInfo{
 	uint32_t *flushInstructions;
 };
 
-struct riscv_spinal_common {
+struct vexriscv_common {
 	struct jtag_tap *tap;
 	struct reg_cache *core_cache;
-	struct riscv_spinal_reg_mapping *regs;
-	//uint32_t core_regs[RISCV_SPINAL_NUM_CORE_REGS];
+	struct vexriscv_reg_mapping *regs;
+	//uint32_t core_regs[vexriscv_NUM_CORE_REGS];
 	uint32_t nb_regs;
-	struct riscv_spinal_core_reg *arch_info;
+	struct vexriscv_core_reg *arch_info;
 	uint32_t dbgBase;
 	int clientSocket;
 	int useTCP;
@@ -60,69 +60,69 @@ struct riscv_spinal_common {
 	struct BusInfo* iBus, *dBus;
 };
 
-static inline struct riscv_spinal_common *
-target_to_riscv_spinal(struct target *target)
+static inline struct vexriscv_common *
+target_to_vexriscv(struct target *target)
 {
-	return (struct riscv_spinal_common *)target->arch_info;
+	return (struct vexriscv_common *)target->arch_info;
 }
 
-struct riscv_spinal_core_reg {
+struct vexriscv_core_reg {
 	const char *name;
 	uint32_t list_num;   /* Index in register cache */
 	uint32_t spr_num;    /* Number in architecture's SPR space */
 	uint32_t inHaltOnly;
 	struct target *target;
-	struct riscv_spinal_common *riscv_spinal_common;
+	struct vexriscv_common *vexriscv_common;
 };
 
 
-struct riscv_spinal_core_reg_init {
+struct vexriscv_core_reg_init {
 	const char *name;
 	uint32_t spr_num;    /* Number in architecture's SPR space */
 	uint32_t inHaltOnly;
 };
 
 
-static struct riscv_spinal_core_reg *riscv_spinal_core_reg_list_arch_info;
+static struct vexriscv_core_reg *vexriscv_core_reg_list_arch_info;
 
 /*
-enum riscv_spinal_reg_nums {
-	RISCV_SPINAL_REG_R0 = 0,
-	RISCV_SPINAL_REG_R1,
-	RISCV_SPINAL_REG_R2,
-	RISCV_SPINAL_REG_R3,
-	RISCV_SPINAL_REG_R4,
-	RISCV_SPINAL_REG_R5,
-	RISCV_SPINAL_REG_R6,
-	RISCV_SPINAL_REG_R7,
-	RISCV_SPINAL_REG_R8,
-	RISCV_SPINAL_REG_R9,
-	RISCV_SPINAL_REG_R10,
-	RISCV_SPINAL_REG_R11,
-	RISCV_SPINAL_REG_R12,
-	RISCV_SPINAL_REG_R13,
-	RISCV_SPINAL_REG_R14,
-	RISCV_SPINAL_REG_R15,
-	RISCV_SPINAL_REG_R16,
-	RISCV_SPINAL_REG_R17,
-	RISCV_SPINAL_REG_R18,
-	RISCV_SPINAL_REG_R19,
-	RISCV_SPINAL_REG_R20,
-	RISCV_SPINAL_REG_R21,
-	RISCV_SPINAL_REG_R22,
-	RISCV_SPINAL_REG_R23,
-	RISCV_SPINAL_REG_R24,
-	RISCV_SPINAL_REG_R25,
-	RISCV_SPINAL_REG_R26,
-	RISCV_SPINAL_REG_R27,
-	RISCV_SPINAL_REG_R28,
-	RISCV_SPINAL_REG_R29,
-	RISCV_SPINAL_REG_R30,
-	RISCV_SPINAL_REG_R31,
-	RISCV_SPINAL_REG_PC
+enum vexriscv_reg_nums {
+	vexriscv_REG_R0 = 0,
+	vexriscv_REG_R1,
+	vexriscv_REG_R2,
+	vexriscv_REG_R3,
+	vexriscv_REG_R4,
+	vexriscv_REG_R5,
+	vexriscv_REG_R6,
+	vexriscv_REG_R7,
+	vexriscv_REG_R8,
+	vexriscv_REG_R9,
+	vexriscv_REG_R10,
+	vexriscv_REG_R11,
+	vexriscv_REG_R12,
+	vexriscv_REG_R13,
+	vexriscv_REG_R14,
+	vexriscv_REG_R15,
+	vexriscv_REG_R16,
+	vexriscv_REG_R17,
+	vexriscv_REG_R18,
+	vexriscv_REG_R19,
+	vexriscv_REG_R20,
+	vexriscv_REG_R21,
+	vexriscv_REG_R22,
+	vexriscv_REG_R23,
+	vexriscv_REG_R24,
+	vexriscv_REG_R25,
+	vexriscv_REG_R26,
+	vexriscv_REG_R27,
+	vexriscv_REG_R28,
+	vexriscv_REG_R29,
+	vexriscv_REG_R30,
+	vexriscv_REG_R31,
+	vexriscv_REG_PC
 };*/
 
-struct riscv_spinal_reg_mapping{
+struct vexriscv_reg_mapping{
 	struct reg x0;
 	struct reg x1;
 	struct reg x2;
@@ -158,7 +158,7 @@ struct riscv_spinal_reg_mapping{
 	struct reg pc;
 };
 
-static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
+static const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
 	{"x0"    	  , 0   + 0*4, FALSE},
 	{"x1"	      , 0   + 1*4, FALSE},
 	{"x2"	      , 0   + 2*4, FALSE},
@@ -295,87 +295,87 @@ static const struct riscv_spinal_core_reg_init riscv_spinal_init_reg_list[] = {
 };
 
 
-static int riscv_spinal_create_reg_list(struct target *target)
+static int vexriscv_create_reg_list(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 
 	LOG_DEBUG("-");		
 
-	riscv_spinal_core_reg_list_arch_info = malloc(ARRAY_SIZE(riscv_spinal_init_reg_list) *
-				       sizeof(struct riscv_spinal_core_reg));
+	vexriscv_core_reg_list_arch_info = malloc(ARRAY_SIZE(vexriscv_init_reg_list) *
+				       sizeof(struct vexriscv_core_reg));
 
-	for (int i = 0; i < (int)ARRAY_SIZE(riscv_spinal_init_reg_list); i++) {
-		riscv_spinal_core_reg_list_arch_info[i].name = riscv_spinal_init_reg_list[i].name;
-		riscv_spinal_core_reg_list_arch_info[i].spr_num = riscv_spinal_init_reg_list[i].spr_num;
-		riscv_spinal_core_reg_list_arch_info[i].inHaltOnly = riscv_spinal_init_reg_list[i].inHaltOnly;
-		riscv_spinal_core_reg_list_arch_info[i].list_num = i;
-		riscv_spinal_core_reg_list_arch_info[i].target = NULL;
-		riscv_spinal_core_reg_list_arch_info[i].riscv_spinal_common = NULL;
+	for (int i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
+		vexriscv_core_reg_list_arch_info[i].name = vexriscv_init_reg_list[i].name;
+		vexriscv_core_reg_list_arch_info[i].spr_num = vexriscv_init_reg_list[i].spr_num;
+		vexriscv_core_reg_list_arch_info[i].inHaltOnly = vexriscv_init_reg_list[i].inHaltOnly;
+		vexriscv_core_reg_list_arch_info[i].list_num = i;
+		vexriscv_core_reg_list_arch_info[i].target = NULL;
+		vexriscv_core_reg_list_arch_info[i].vexriscv_common = NULL;
 	}
 
-	riscv_spinal->nb_regs = ARRAY_SIZE(riscv_spinal_init_reg_list);
+	vexriscv->nb_regs = ARRAY_SIZE(vexriscv_init_reg_list);
 
 
 	return ERROR_OK;
 }
 
 
-static int riscv_spinal_target_create(struct target *target, Jim_Interp *interp)
+static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 {
-	printf("YOLO riscv_spinal_target_create\n");
+	LOG_DEBUG("vexriscv_target_create\n");
 	if (target->tap == NULL)
 		return ERROR_FAIL;
 
-	struct riscv_spinal_common *riscv_spinal = calloc(1, sizeof(struct riscv_spinal_common));
-	target->arch_info = riscv_spinal;
-	riscv_spinal->dbgBase = target->dbgbase;
-	riscv_spinal->tap = target->tap;
-	riscv_spinal->clientSocket = 0;
-	riscv_spinal->readWaitCycles = 10;
-	riscv_spinal_create_reg_list(target);
+	struct vexriscv_common *vexriscv = calloc(1, sizeof(struct vexriscv_common));
+	target->arch_info = vexriscv;
+	vexriscv->dbgBase = target->dbgbase;
+	vexriscv->tap = target->tap;
+	vexriscv->clientSocket = 0;
+	vexriscv->readWaitCycles = 10;
+	vexriscv_create_reg_list(target);
 
 
 	return ERROR_OK;
 }
 
 
-int riscv_spinal_write_regfile(struct target* target,uint32_t regId,uint32_t value){
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+int vexriscv_write_regfile(struct target* target,uint32_t regId,uint32_t value){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
 	if(low & 0x800){
 		high += 0x1000;
 	}
 
-	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x37 | (regId << 7) | high)) != ERROR_OK) //LUI regId, high
+	if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x37 | (regId << 7) | high)) != ERROR_OK) //LUI regId, high
 		return error;
 
-	if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (regId << 7) | (regId << 15) | (low << 20))) != ERROR_OK) //ADDI regId, x1, low
+	if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x13 | (regId << 7) | (regId << 15) | (low << 20))) != ERROR_OK) //ADDI regId, x1, low
 		return error;
 	return ERROR_OK;
 
 }
 
-static int riscv_spinal_get_core_reg(struct reg *reg)
+static int vexriscv_get_core_reg(struct reg *reg)
 {
-	struct riscv_spinal_core_reg *riscv_spinal_reg = reg->arch_info;
-	struct target *target = riscv_spinal_reg->target;
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_core_reg *vexriscv_reg = reg->arch_info;
+	struct target *target = vexriscv_reg->target;
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 
-	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
+	if (vexriscv_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
 	if(!reg->valid){
 		if(reg->number < 32){
-			if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (reg->number << 15))) != ERROR_OK) //ADDI x0, x?, 0
+			if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x13 | (reg->number << 15))) != ERROR_OK) //ADDI x0, x?, 0
 				return error;
-			if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
+			if((error = vexriscv_read32(target,vexriscv->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
 				return error;
 		}else if(reg->number == 32){
-			if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x17)) != ERROR_OK) //AUIPC x0,0
+			if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x17)) != ERROR_OK) //AUIPC x0,0
 				return error;
-			if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
+			if((error = vexriscv_read32(target,vexriscv->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
 				return error;
 		}else{
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
@@ -392,17 +392,17 @@ static int riscv_spinal_get_core_reg(struct reg *reg)
 }
 
 
-static int riscv_spinal_set_core_reg(struct reg *reg, uint8_t *buf)
+static int vexriscv_set_core_reg(struct reg *reg, uint8_t *buf)
 {
-	struct riscv_spinal_core_reg *riscv_spinal_reg = reg->arch_info;
-	struct target *target = riscv_spinal_reg->target;
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_core_reg *vexriscv_reg = reg->arch_info;
+	struct target *target = vexriscv_reg->target;
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	uint32_t value = buf_get_u32(buf, 0, 32);
 
-	if (riscv_spinal_reg->inHaltOnly && target->state != TARGET_HALTED)
+	if (vexriscv_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
-	if (riscv_spinal_reg->list_num >= riscv_spinal->nb_regs) {
+	if (vexriscv_reg->list_num >= vexriscv->nb_regs) {
 		LOG_ERROR("ERROR, try to write unexisting CPU register");
 		return ERROR_FAIL;
 	}
@@ -413,19 +413,19 @@ static int riscv_spinal_set_core_reg(struct reg *reg, uint8_t *buf)
 	return ERROR_OK;
 }
 
-static const struct reg_arch_type riscv_spinal_reg_type = {
-	.get = riscv_spinal_get_core_reg,
-	.set = riscv_spinal_set_core_reg,
+static const struct reg_arch_type vexriscv_reg_type = {
+	.get = vexriscv_get_core_reg,
+	.set = vexriscv_set_core_reg,
 };
 
-static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
+static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct reg_cache **cache_p = register_get_last_cache_p(&target->reg_cache);
 	struct reg_cache *cache = malloc(sizeof(struct reg_cache));
-	struct reg *reg_list = calloc(riscv_spinal->nb_regs, sizeof(struct reg));
-	struct riscv_spinal_core_reg *arch_info =
-		malloc((riscv_spinal->nb_regs) * sizeof(struct riscv_spinal_core_reg));
+	struct reg *reg_list = calloc(vexriscv->nb_regs, sizeof(struct reg));
+	struct vexriscv_core_reg *arch_info =
+		malloc((vexriscv->nb_regs) * sizeof(struct vexriscv_core_reg));
 
 
 
@@ -435,25 +435,25 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 	cache->name = "VexRiscv registers";
 	cache->next = NULL;
 	cache->reg_list = reg_list;
-	cache->num_regs = riscv_spinal->nb_regs;
+	cache->num_regs = vexriscv->nb_regs;
 	(*cache_p) = cache;
-	riscv_spinal->core_cache = cache;
-	riscv_spinal->arch_info = arch_info;
-	assert(sizeof(struct reg)*riscv_spinal->nb_regs >= sizeof(struct riscv_spinal_reg_mapping));
-	riscv_spinal->regs = (struct riscv_spinal_reg_mapping*)reg_list;
+	vexriscv->core_cache = cache;
+	vexriscv->arch_info = arch_info;
+	assert(sizeof(struct reg)*vexriscv->nb_regs >= sizeof(struct vexriscv_reg_mapping));
+	vexriscv->regs = (struct vexriscv_reg_mapping*)reg_list;
 
-	for (uint32_t i = 0; i < riscv_spinal->nb_regs; i++) {
-		arch_info[i] = riscv_spinal_core_reg_list_arch_info[i];
+	for (uint32_t i = 0; i < vexriscv->nb_regs; i++) {
+		arch_info[i] = vexriscv_core_reg_list_arch_info[i];
 		arch_info[i].target = target;
-		arch_info[i].riscv_spinal_common = riscv_spinal;
-		reg_list[i].name = riscv_spinal_core_reg_list_arch_info[i].name;
+		arch_info[i].vexriscv_common = vexriscv;
+		reg_list[i].name = vexriscv_core_reg_list_arch_info[i].name;
 		reg_list[i].feature = NULL;
 		reg_list[i].group = NULL;
 		reg_list[i].size = 32;
 		reg_list[i].value = calloc(1, 4);
 		reg_list[i].dirty = 0;
 		reg_list[i].valid = 0;
-		reg_list[i].type = &riscv_spinal_reg_type;
+		reg_list[i].type = &vexriscv_reg_type;
 		reg_list[i].arch_info = &arch_info[i];
 		reg_list[i].number = i;
 		reg_list[i].exist = true;
@@ -462,7 +462,7 @@ static struct reg_cache *riscv_spinal_build_reg_cache(struct target *target)
 	return cache;
 }
 
-static void riscv_spinal_set_instr(struct jtag_tap *tap, uint32_t new_instr)
+static void vexriscv_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 {
 	struct scan_field field;
 
@@ -475,7 +475,7 @@ static void riscv_spinal_set_instr(struct jtag_tap *tap, uint32_t new_instr)
 	free(t);
 }
 
-static void riscv_spinal_yaml_ignore_block(yaml_parser_t *parser){
+static void vexriscv_yaml_ignore_block(yaml_parser_t *parser){
 	yaml_token_t  token;
 	int32_t level = 0;
 	while(1){
@@ -493,7 +493,7 @@ static void riscv_spinal_yaml_ignore_block(yaml_parser_t *parser){
 }
 
 
-static void riscv_spinal_parse_busInfo(yaml_parser_t *parser, struct BusInfo *busInfo){
+static void vexriscv_parse_busInfo(yaml_parser_t *parser, struct BusInfo *busInfo){
 	yaml_token_t  token;
 	busInfo->flushInstructions = NULL;
 	while(1){
@@ -525,16 +525,16 @@ static void riscv_spinal_parse_busInfo(yaml_parser_t *parser, struct BusInfo *bu
 	}
 }
 
-static int riscv_spinal_parse_cpu_file(struct command_context *cmd_ctx, struct target *target){
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+static int vexriscv_parse_cpu_file(struct command_context *cmd_ctx, struct target *target){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	yaml_parser_t parser;
 	yaml_token_t  token;
 	int done = 0;
 	yaml_parser_initialize(&parser);
 
-	FILE *input = fopen(riscv_spinal->cpuConfigFile, "rb");
+	FILE *input = fopen(vexriscv->cpuConfigFile, "rb");
 	if(!input){
-		LOG_ERROR("cpuConfigFile %s not found", riscv_spinal->cpuConfigFile);
+		LOG_ERROR("cpuConfigFile %s not found", vexriscv->cpuConfigFile);
 		goto error;
 	}
 
@@ -549,15 +549,15 @@ static int riscv_spinal_parse_cpu_file(struct command_context *cmd_ctx, struct t
 		switch(token.type){
 			case YAML_SCALAR_TOKEN:
 				if(strcmp((char*)token.data.scalar.value,"iBus") == 0){
-					riscv_spinal->iBus = malloc(sizeof(struct BusInfo));
-					riscv_spinal_parse_busInfo(&parser, riscv_spinal->iBus);
+					vexriscv->iBus = malloc(sizeof(struct BusInfo));
+					vexriscv_parse_busInfo(&parser, vexriscv->iBus);
 				}
 				if(strcmp((char*)token.data.scalar.value,"dBus") == 0){
-					riscv_spinal->dBus = malloc(sizeof(struct BusInfo));
-					riscv_spinal_parse_busInfo(&parser, riscv_spinal->dBus);
+					vexriscv->dBus = malloc(sizeof(struct BusInfo));
+					vexriscv_parse_busInfo(&parser, vexriscv->dBus);
 				}
 				break;
-			case YAML_BLOCK_ENTRY_TOKEN: riscv_spinal_yaml_ignore_block(&parser); break;
+			case YAML_BLOCK_ENTRY_TOKEN: vexriscv_yaml_ignore_block(&parser); break;
 			default: break;
 		}
 
@@ -584,34 +584,34 @@ static int riscv_spinal_parse_cpu_file(struct command_context *cmd_ctx, struct t
 	return ERROR_FAIL;
 }
 
-static int riscv_spinal_init_target(struct command_context *cmd_ctx, struct target *target)
+static int vexriscv_init_target(struct command_context *cmd_ctx, struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
-	printf("YOLO riscv_spinal_init_target\n");
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	LOG_DEBUG("vexriscv_init_target\n");
 	LOG_DEBUG("%s", __func__);
 
-	riscv_spinal->iBus = NULL;
-	riscv_spinal->dBus = NULL;
-	if(riscv_spinal_parse_cpu_file(cmd_ctx, target))
+	vexriscv->iBus = NULL;
+	vexriscv->dBus = NULL;
+	if(vexriscv_parse_cpu_file(cmd_ctx, target))
 		return ERROR_FAIL;
 
-	riscv_spinal_build_reg_cache(target);
+	vexriscv_build_reg_cache(target);
 
-	riscv_spinal->useTCP = 0;
+	vexriscv->useTCP = 0;
 	struct command *command = cmd_ctx->commands;
 	while(command != NULL){
 		if(strcmp(command->name,"dummy") == 0){
-			riscv_spinal->useTCP = 1;
+			vexriscv->useTCP = 1;
 		}
 		command = command->next;
 	}
-	if(riscv_spinal->useTCP){
+	if(vexriscv->useTCP){
 		struct sockaddr_in serverAddr;
 		//---- Create the socket. The three arguments are: ----//
 		// 1) Internet domain 2) Stream socket 3) Default protocol (TCP in this case) //
-		riscv_spinal->clientSocket = socket(PF_INET, SOCK_STREAM, 0);
+		vexriscv->clientSocket = socket(PF_INET, SOCK_STREAM, 0);
 		int flag = 1;
-		setsockopt(  riscv_spinal->clientSocket,            /* socket affected */
+		setsockopt(  vexriscv->clientSocket,            /* socket affected */
 					 IPPROTO_TCP,     /* set option at TCP level */
 					 TCP_NODELAY,     /* name of option */
 					 (char *) &flag,  /* the cast is historical
@@ -630,7 +630,7 @@ static int riscv_spinal_init_target(struct command_context *cmd_ctx, struct targ
 
 		//---- Connect the socket to the server using the address struct ----//
 		socklen_t addr_size = sizeof serverAddr;
-		if(connect(riscv_spinal->clientSocket, (struct sockaddr *) &serverAddr, addr_size) != 0){
+		if(connect(vexriscv->clientSocket, (struct sockaddr *) &serverAddr, addr_size) != 0){
 			LOG_DEBUG("Can't connect to debug server");
 			return ERROR_FAIL;
 		} else {
@@ -641,39 +641,39 @@ static int riscv_spinal_init_target(struct command_context *cmd_ctx, struct targ
 	return ERROR_OK;
 }
 
-static int riscv_spinal_arch_state(struct target *target)
+static int vexriscv_arch_state(struct target *target)
 {
-	printf("YOLO riscv_spinal_arch_state\n");
+	LOG_DEBUG("vexriscv_arch_state\n");
 	LOG_DEBUG("%s", __func__);
 	return ERROR_OK;
 }
 
 
-static int riscv_spinal_is_running(struct target * target,uint32_t *running){
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+static int vexriscv_is_running(struct target * target,uint32_t *running){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	uint32_t flags;
 	int error;
-	if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase,&flags)) != ERROR_OK){
-		LOG_ERROR("Error while calling riscv_spinal_is_cpu_running");
+	if((error = vexriscv_read32(target,vexriscv->dbgBase,&flags)) != ERROR_OK){
+		LOG_ERROR("Error while calling vexriscv_is_cpu_running");
 		return error;
 	}
-	*running = (flags & RISCV_SPINAL_FLAGS_PIP_BUSY) || !(flags & RISCV_SPINAL_FLAGS_HALT);
+	*running = (flags & vexriscv_FLAGS_PIP_BUSY) || !(flags & vexriscv_FLAGS_HALT);
 
 	return ERROR_OK;
 }
 
-static int riscv_spinal_flush_bus(struct target *target,struct BusInfo * busInfo){
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+static int vexriscv_flush_bus(struct target *target,struct BusInfo * busInfo){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	if(!busInfo) return ERROR_OK;
 	for(uint32_t idx = 0;idx < busInfo->flushInstructionsSize;idx++){
-		riscv_spinal_write32_no_execute(target,riscv_spinal->dbgBase + 4,busInfo->flushInstructions[idx]);
+		vexriscv_write32_no_execute(target,vexriscv->dbgBase + 4,busInfo->flushInstructions[idx]);
 	}
 	if((error = jtag_execute_queue()) != ERROR_OK)
 		return error;
 	while(1){
 		uint32_t running;
-		if((error = riscv_spinal_is_running(target,&running)) != ERROR_OK)
+		if((error = vexriscv_is_running(target,&running)) != ERROR_OK)
 			return error;
 		if(!running)
 			break;
@@ -681,32 +681,32 @@ static int riscv_spinal_flush_bus(struct target *target,struct BusInfo * busInfo
 	return ERROR_OK;
 }
 
-static int riscv_spinal_flush_caches(struct target *target)
+static int vexriscv_flush_caches(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
-	if((error = riscv_spinal_flush_bus(target,riscv_spinal->iBus)) != ERROR_OK)
+	if((error = vexriscv_flush_bus(target,vexriscv->iBus)) != ERROR_OK)
 		return error;
-	if((error = riscv_spinal_flush_bus(target,riscv_spinal->dBus)) != ERROR_OK)
+	if((error = vexriscv_flush_bus(target,vexriscv->dBus)) != ERROR_OK)
 		return error;
 	return ERROR_OK;
 }
 
-static int riscv_spinal_save_context(struct target *target)
+static int vexriscv_save_context(struct target *target)
 {
 	int error;
 	LOG_DEBUG("-");
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 
 
 	uint32_t flags;
-	if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase,&flags)) != ERROR_OK)
+	if((error = vexriscv_read32(target,vexriscv->dbgBase,&flags)) != ERROR_OK)
 		return error;
 
 	//get PC in case of breakpoint before losing the value
-	if(flags & RISCV_SPINAL_FLAGS_HALTED_BY_BREAK){
-		struct reg* reg = &riscv_spinal->regs->pc;
-		if((error = riscv_spinal_read32(target,riscv_spinal->dbgBase+4,(uint32_t*)reg->value)) != ERROR_OK)
+	if(flags & vexriscv_FLAGS_HALTED_BY_BREAK){
+		struct reg* reg = &vexriscv->regs->pc;
+		if((error = vexriscv_read32(target,vexriscv->dbgBase+4,(uint32_t*)reg->value)) != ERROR_OK)
 			return error;
 		reg->valid = 1;
 		reg->dirty = 1;
@@ -714,11 +714,11 @@ static int riscv_spinal_save_context(struct target *target)
 
 	//Read all common CPU registers, as debuggers will always ask them even if they don't need them.
 	/*for(uint32_t regId = 0;regId < 32;regId++){
-		struct reg* reg = &riscv_spinal->core_cache->reg_list[regId];
+		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
 
-		if(riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x13 | (reg->number << 15))) //ADDI x0, x?, 0
+		if(vexriscv_write32(target,vexriscv->dbgBase + 4,0x13 | (reg->number << 15))) //ADDI x0, x?, 0
 			return ERROR_FAIL;
-		if(riscv_spinal_read32(target,riscv_spinal->dbgBase + 4,(uint32_t*)reg->value))
+		if(vexriscv_read32(target,vexriscv->dbgBase + 4,(uint32_t*)reg->value))
 			return ERROR_FAIL;
 
 		reg->valid = 1;
@@ -726,21 +726,21 @@ static int riscv_spinal_save_context(struct target *target)
 	}*/
 	uint8_t flagsBuffer[32];
 	for(uint32_t regId = 0;regId < 32;regId++){
-		struct reg* reg = &riscv_spinal->core_cache->reg_list[regId];
-		riscv_spinal_write32_no_execute(target,riscv_spinal->dbgBase + 4,0x13 | (reg->number << 15)); //ADDI x0, x?, 0
-		riscv_spinal_read32_no_execute(target,riscv_spinal->dbgBase + 4,(uint32_t*)reg->value,flagsBuffer + regId);
+		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
+		vexriscv_write32_no_execute(target,vexriscv->dbgBase + 4,0x13 | (reg->number << 15)); //ADDI x0, x?, 0
+		vexriscv_read32_no_execute(target,vexriscv->dbgBase + 4,(uint32_t*)reg->value,flagsBuffer + regId);
 	}
 	if((error = jtag_execute_queue()) != ERROR_OK)
 		return error;
 	for(uint32_t regId = 0;regId < 32;regId++){
-		struct reg* reg = &riscv_spinal->core_cache->reg_list[regId];
-		if(riscv_spinal_check_rsp_Flags(flagsBuffer[regId]) != ERROR_OK)
+		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
+		if(vexriscv_check_rsp_Flags(flagsBuffer[regId]) != ERROR_OK)
 			return ERROR_FAIL;
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
 	}
 
-	if((error = riscv_spinal_flush_caches(target)) != ERROR_OK) //Flush instruction cache
+	if((error = vexriscv_flush_caches(target)) != ERROR_OK) //Flush instruction cache
 		return error;
 
 	return ERROR_OK;
@@ -748,26 +748,26 @@ static int riscv_spinal_save_context(struct target *target)
 
 
 
-static int riscv_spinal_restore_context(struct target *target)
+static int vexriscv_restore_context(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("-");
 
 	//PC
-	if(riscv_spinal->regs->pc.valid && riscv_spinal->regs->pc.dirty){
-		if((error = riscv_spinal_write_regfile(target,1,*((uint32_t*)riscv_spinal->regs->pc.value))) != ERROR_OK) return error;
-		if((error = riscv_spinal_write32(target,riscv_spinal->dbgBase + 4,0x67 | (1 << 15))) != ERROR_OK) //JALR x1
+	if(vexriscv->regs->pc.valid && vexriscv->regs->pc.dirty){
+		if((error = vexriscv_write_regfile(target,1,*((uint32_t*)vexriscv->regs->pc.value))) != ERROR_OK) return error;
+		if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x67 | (1 << 15))) != ERROR_OK) //JALR x1
 			return error;
 
-		riscv_spinal->regs->pc.valid = false;
-		riscv_spinal->regs->pc.dirty = false;
+		vexriscv->regs->pc.valid = false;
+		vexriscv->regs->pc.dirty = false;
 	}
 
 	for(uint32_t i = 0;i < 32;i++){
-		struct reg *reg = riscv_spinal->core_cache->reg_list + i;
+		struct reg *reg = vexriscv->core_cache->reg_list + i;
 		if(reg->valid && reg->dirty){
-			if((error = riscv_spinal_write_regfile(target,i,*((uint32_t*)reg->value))) != ERROR_OK) return error;
+			if((error = vexriscv_write_regfile(target,i,*((uint32_t*)reg->value))) != ERROR_OK) return error;
 			reg->valid = false;
 			reg->dirty = false;
 		}
@@ -779,20 +779,20 @@ static int riscv_spinal_restore_context(struct target *target)
 }
 
 
-static int riscv_spinal_debug_entry(struct target *target)
+static int vexriscv_debug_entry(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("-");
 
 
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return error;
 	}
 
-	if ((error = riscv_spinal_save_context(target)) != ERROR_OK) {
-		LOG_ERROR("Error while calling riscv_spinal_save_context");
+	if ((error = vexriscv_save_context(target)) != ERROR_OK) {
+		LOG_ERROR("Error while calling vexriscv_save_context");
 		return error;
 	}
 
@@ -800,9 +800,9 @@ static int riscv_spinal_debug_entry(struct target *target)
 	return ERROR_OK;
 }
 
-static int riscv_spinal_halt(struct target *target)
+static int vexriscv_halt(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("target->state: %s",target_state_name(target));
 
@@ -820,7 +820,7 @@ static int riscv_spinal_halt(struct target *target)
 		}
 	}
 
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return error;
 	}
@@ -831,12 +831,12 @@ static int riscv_spinal_halt(struct target *target)
 }
 
 
-static int riscv_spinal_poll(struct target *target)
+static int vexriscv_poll(struct target *target)
 {
 	int retval;
 
 	uint32_t running;
-	retval = riscv_spinal_is_running(target,&running);
+	retval = vexriscv_is_running(target,&running);
 	if (retval != ERROR_OK) {
 		return retval;
 	}
@@ -849,9 +849,9 @@ static int riscv_spinal_poll(struct target *target)
 
 			target->state = TARGET_HALTED;
 
-			retval = riscv_spinal_debug_entry(target);
+			retval = vexriscv_debug_entry(target);
 			if (retval != ERROR_OK) {
-				LOG_ERROR("Error while calling riscv_spinal_debug_entry");
+				LOG_ERROR("Error while calling vexriscv_debug_entry");
 				return retval;
 			}
 
@@ -859,9 +859,9 @@ static int riscv_spinal_poll(struct target *target)
 		} else if (target->state == TARGET_DEBUG_RUNNING) {
 			target->state = TARGET_HALTED;
 
-			retval = riscv_spinal_debug_entry(target);
+			retval = vexriscv_debug_entry(target);
 			if (retval != ERROR_OK) {
-				LOG_ERROR("Error while calling riscv_spinal_debug_entry");
+				LOG_ERROR("Error while calling vexriscv_debug_entry");
 				return retval;
 			}
 
@@ -874,15 +874,15 @@ static int riscv_spinal_poll(struct target *target)
 
 			target->state = TARGET_RUNNING;
 
-			retval = riscv_spinal_halt(target);
+			retval = vexriscv_halt(target);
 			if (retval != ERROR_OK) {
-				LOG_ERROR("Error while calling riscv_spinal_halt");
+				LOG_ERROR("Error while calling vexriscv_halt");
 				return retval;
 			}
 
-			retval = riscv_spinal_debug_entry(target);
+			retval = vexriscv_debug_entry(target);
 			if (retval != ERROR_OK) {
-				LOG_ERROR("Error while calling riscv_spinal_debug_entry");
+				LOG_ERROR("Error while calling vexriscv_debug_entry");
 				return retval;
 			}
 
@@ -897,18 +897,18 @@ static int riscv_spinal_poll(struct target *target)
 	return ERROR_OK;
 }
 
-static int riscv_spinal_assert_reset(struct target *target)
+static int vexriscv_assert_reset(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
-	printf("YOLO riscv_spinal_assert_reset\n");
+	LOG_DEBUG("vexriscv_assert_reset\n");
 	target->state = TARGET_RESET;
 
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		return error;
 	}
 
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_HALT_SET | RISCV_SPINAL_FLAGS_RESET_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET | vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
 		return error;
 	}
 
@@ -916,14 +916,14 @@ static int riscv_spinal_assert_reset(struct target *target)
 	return ERROR_OK;
 }
 
-static int riscv_spinal_deassert_reset(struct target *target)
+static int vexriscv_deassert_reset(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
-	printf("YOLO riscv_spinal_deassert_reset\n");
+	LOG_DEBUG("vexriscv_deassert_reset\n");
 	target->state = TARGET_RUNNING;
 
-	if ((error = riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_RESET_CLEAR)) != ERROR_OK) {
+	if ((error = vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
 		return error;
 	}
 
@@ -933,14 +933,14 @@ static int riscv_spinal_deassert_reset(struct target *target)
 
 
 
-static void riscv_spinal_memory_cmd(struct target *target, uint32_t address,uint32_t data,int32_t size, int read)
+static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t data,int32_t size, int read)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
 	struct scan_field field;
 	uint8_t cmd[10];
 
-	if(!riscv_spinal->useTCP) riscv_spinal_set_instr(tap, 0x2);
+	if(!vexriscv->useTCP) vexriscv_set_instr(tap, 0x2);
 
 	uint8_t inst = 0x00;
 	switch(size){
@@ -973,7 +973,7 @@ static void riscv_spinal_memory_cmd(struct target *target, uint32_t address,uint
 	field.in_value = NULL;
 	field.check_value = NULL;
 	field.check_mask = NULL;
-	if(!riscv_spinal->useTCP)
+	if(!vexriscv->useTCP)
 		jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
 	else {
 		uint8_t buffer[10];
@@ -981,13 +981,13 @@ static void riscv_spinal_memory_cmd(struct target *target, uint32_t address,uint
 		buffer[1] = size;
 		*((uint32_t*) (buffer + 2)) = address;
 		*((uint32_t*) (buffer + 6)) = data;
-		send(riscv_spinal->clientSocket,buffer,10,0);
+		send(vexriscv->clientSocket,buffer,10,0);
 	}
 }
 
-static void riscv_spinal_read_rsp(struct target *target,uint8_t *value)
+static void vexriscv_read_rsp(struct target *target,uint8_t *value)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
 	struct scan_field field;
 	field.num_bits = 34;
@@ -996,13 +996,13 @@ static void riscv_spinal_read_rsp(struct target *target,uint8_t *value)
 	field.check_value = NULL;
 	field.check_mask = NULL;
 
-	if(!riscv_spinal->useTCP) {
-		jtag_add_clocks(riscv_spinal->readWaitCycles);
-		riscv_spinal_set_instr(tap, 0x03);
+	if(!vexriscv->useTCP) {
+		jtag_add_clocks(vexriscv->readWaitCycles);
+		vexriscv_set_instr(tap, 0x03);
 		jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
 	} else {
 		uint32_t buffer;
-		if(recv(riscv_spinal->clientSocket, &buffer, 4, 0) == 4){
+		if(recv(vexriscv->clientSocket, &buffer, 4, 0) == 4){
 			value[0] = 1;
 			bit_copy(value,2,(uint8_t *) &buffer,0,32);
 		} else{
@@ -1012,13 +1012,13 @@ static void riscv_spinal_read_rsp(struct target *target,uint8_t *value)
 	}
 }
 
-static int riscv_spinal_check_rsp_Flags(uint8_t flags){
+static int vexriscv_check_rsp_Flags(uint8_t flags){
 	return (flags & 0x3) == 1 ? ERROR_OK : ERROR_FAIL;
 }
 
-static void riscv_spinal_read_rsp_splited(struct target *target,uint32_t *data, uint8_t *flags)
+static void vexriscv_read_rsp_splited(struct target *target,uint32_t *data, uint8_t *flags)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
 	struct scan_field feilds[2];
 	feilds[0].num_bits = 2;
@@ -1033,12 +1033,12 @@ static void riscv_spinal_read_rsp_splited(struct target *target,uint32_t *data, 
 	feilds[1].check_value = NULL;
 	feilds[1].check_mask = NULL;
 
-	if(!riscv_spinal->useTCP) {
-		jtag_add_clocks(riscv_spinal->readWaitCycles);
-		riscv_spinal_set_instr(tap, 0x03);
+	if(!vexriscv->useTCP) {
+		jtag_add_clocks(vexriscv->readWaitCycles);
+		vexriscv_set_instr(tap, 0x03);
 		jtag_add_dr_scan(tap, 2, feilds, TAP_IDLE);
 	} else {
-		if(recv(riscv_spinal->clientSocket, &data, 4, 0) != 4){
+		if(recv(vexriscv->clientSocket, &data, 4, 0) != 4){
 			LOG_ERROR("???");
 			*flags = 0;
 		}else {
@@ -1046,7 +1046,7 @@ static void riscv_spinal_read_rsp_splited(struct target *target,uint32_t *data, 
 		}
 	}
 }
-static int riscv_spinal_read_memory(struct target *target, uint32_t address,
+static int vexriscv_read_memory(struct target *target, uint32_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	int rsp;
@@ -1060,8 +1060,8 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 	uint8_t *tPtr = t;
 	uint32_t idx = count;
 	while (idx--) {
-		riscv_spinal_memory_cmd(target, address,address,size, 1);
-		riscv_spinal_read_rsp(target,tPtr);
+		vexriscv_memory_cmd(target, address,address,size, 1);
+		vexriscv_read_rsp(target,tPtr);
 		address += size;
 		tPtr += size + 1;
 	}
@@ -1079,7 +1079,7 @@ static int riscv_spinal_read_memory(struct target *target, uint32_t address,
 	return rsp;
 }
 
-static int riscv_spinal_write_memory(struct target *target, uint32_t address,
+static int vexriscv_write_memory(struct target *target, uint32_t address,
 				uint32_t size, uint32_t count,
 				const uint8_t *buffer)
 {
@@ -1091,7 +1091,7 @@ static int riscv_spinal_write_memory(struct target *target, uint32_t address,
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	while (count--) {
-		riscv_spinal_memory_cmd(target, address,*((uint32_t*)buffer),size, 0);
+		vexriscv_memory_cmd(target, address,*((uint32_t*)buffer),size, 0);
 		address += size;
 		buffer += size;
 	}
@@ -1099,47 +1099,47 @@ static int riscv_spinal_write_memory(struct target *target, uint32_t address,
 	return jtag_execute_queue();
 }
 
-static int riscv_spinal_write32(struct target *target, uint32_t address,uint32_t data){
-	return riscv_spinal_write_memory(target,address,4,1,(uint8_t*)&data);
+static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data){
+	return vexriscv_write_memory(target,address,4,1,(uint8_t*)&data);
 }
 
 
-static int riscv_spinal_read32(struct target *target, uint32_t address,uint32_t *data){
-	return riscv_spinal_read_memory(target,address,4,1,(uint8_t*)data);
+static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data){
+	return vexriscv_read_memory(target,address,4,1,(uint8_t*)data);
 }
 
-static void riscv_spinal_write32_no_execute(struct target *target, uint32_t address,uint32_t data){
-		riscv_spinal_memory_cmd(target, address, data, 4, 0);
+static void vexriscv_write32_no_execute(struct target *target, uint32_t address,uint32_t data){
+		vexriscv_memory_cmd(target, address, data, 4, 0);
 }
-static void riscv_spinal_read32_no_execute(struct target *target, uint32_t address,uint32_t *data,uint8_t *flags){
-	riscv_spinal_memory_cmd(target, address,address,4, 1);
-	riscv_spinal_read_rsp_splited(target,data,flags);
+static void vexriscv_read32_no_execute(struct target *target, uint32_t address,uint32_t *data,uint8_t *flags){
+	vexriscv_memory_cmd(target, address,address,4, 1);
+	vexriscv_read_rsp_splited(target,data,flags);
 }
 
-static int riscv_spinal_get_gdb_reg_list(struct target *target, struct reg **reg_list[],
+static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_list[],
 			  int *reg_list_size, enum target_register_class reg_class)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
-	printf("riscv_spinal_get_gdb_reg_list %d\n",reg_class);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	LOG_DEBUG("vexriscv_get_gdb_reg_list %d\n",reg_class);
 	if (reg_class == REG_CLASS_GENERAL) {
-		*reg_list_size = riscv_spinal->nb_regs;
+		*reg_list_size = vexriscv->nb_regs;
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 
-		for (uint32_t i = 0; i < riscv_spinal->nb_regs; i++)
-			(*reg_list)[i] = &riscv_spinal->core_cache->reg_list[i];
+		for (uint32_t i = 0; i < vexriscv->nb_regs; i++)
+			(*reg_list)[i] = &vexriscv->core_cache->reg_list[i];
 	} else {
-		*reg_list_size = riscv_spinal->nb_regs;
+		*reg_list_size = vexriscv->nb_regs;
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 		
-		for (uint32_t i = 0; i < riscv_spinal->nb_regs; i++)
-			(*reg_list)[i] = &riscv_spinal->core_cache->reg_list[i];
+		for (uint32_t i = 0; i < vexriscv->nb_regs; i++)
+			(*reg_list)[i] = &vexriscv->core_cache->reg_list[i];
 	}
 
 	return ERROR_OK;
 
 }
 
-static int riscv_spinal_add_breakpoint(struct target *target,
+static int vexriscv_add_breakpoint(struct target *target,
 			       struct breakpoint *breakpoint)
 {
 	uint32_t data;
@@ -1153,7 +1153,7 @@ static int riscv_spinal_add_breakpoint(struct target *target,
 		LOG_ERROR("HW breakpoints not supported for now. Doing SW breakpoint.");
 
 	/* Read and save the instruction */
-	int retval = riscv_spinal_read32(target,
+	int retval = vexriscv_read32(target,
 					 breakpoint->address,
 					 &data);
 	if (retval != ERROR_OK) {
@@ -1168,13 +1168,13 @@ static int riscv_spinal_add_breakpoint(struct target *target,
 	breakpoint->orig_instr = malloc(breakpoint->length);
 	memcpy(breakpoint->orig_instr, &data, breakpoint->length);
 
-	/* Sub in the riscv_spinal trap instruction */
-	retval = riscv_spinal_write32(target,
+	/* Sub in the vexriscv trap instruction */
+	retval = vexriscv_write32(target,
 					  breakpoint->address,
-					  RISCV_SPINAL_BREAK_INST);
+					  vexriscv_BREAK_INST);
 
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while writing riscv_spinal_TRAP_INSTR at 0x%08" PRIx32,
+		LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
 			   breakpoint->address);
 		return retval;
 	}
@@ -1184,7 +1184,7 @@ static int riscv_spinal_add_breakpoint(struct target *target,
 	return ERROR_OK;
 }
 
-static int riscv_spinal_remove_breakpoint(struct target *target,
+static int vexriscv_remove_breakpoint(struct target *target,
 				  struct breakpoint *breakpoint)
 {
 	LOG_DEBUG("Removing breakpoint: addr 0x%08" PRIx32 ", len %d, type %d, set: %d, id: %" PRId32,
@@ -1196,7 +1196,7 @@ static int riscv_spinal_remove_breakpoint(struct target *target,
 		LOG_ERROR("HW breakpoints not supported for now. Doing SW breakpoint.");
 
 	/* Replace the removed instruction */
-	int retval = riscv_spinal_write32(target,
+	int retval = vexriscv_write32(target,
 					  breakpoint->address,
 					  *((uint32_t*)breakpoint->orig_instr));
 
@@ -1212,12 +1212,12 @@ static int riscv_spinal_remove_breakpoint(struct target *target,
 }
 
 //TODO look like instruction step when branch is strange
-static int riscv_spinal_resume_or_step(struct target *target, int current,
+static int vexriscv_resume_or_step(struct target *target, int current,
 			       uint32_t address, int handle_breakpoints,
 			       int debug_execution, int step)
 {
 
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct breakpoint *breakpoint = NULL;
 	int error;
 
@@ -1234,15 +1234,15 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 
 	/* current ? continue on current pc : continue at <address> */
 	if (!current){
-		*((uint32_t*)riscv_spinal->regs->pc.value) = address;
-		riscv_spinal->regs->pc.valid = true;
-		riscv_spinal->regs->pc.dirty = true;
+		*((uint32_t*)vexriscv->regs->pc.value) = address;
+		vexriscv->regs->pc.valid = true;
+		vexriscv->regs->pc.dirty = true;
 	}
 
 
-	int retval = riscv_spinal_restore_context(target);
+	int retval = vexriscv_restore_context(target);
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while calling riscv_spinal_restore_context");
+		LOG_ERROR("Error while calling vexriscv_restore_context");
 		return retval;
 	}
 
@@ -1250,17 +1250,17 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 	/* The front-end may request us not to handle breakpoints */
 	if (handle_breakpoints) {
 		/* Single step past breakpoint at current address */
-		breakpoint = breakpoint_find(target, *((uint32_t*)riscv_spinal->regs->pc.value));
+		breakpoint = breakpoint_find(target, *((uint32_t*)vexriscv->regs->pc.value));
 		if (breakpoint) {
 			LOG_DEBUG("Unset breakpoint at 0x%08" PRIx32, breakpoint->address);
-			retval = riscv_spinal_remove_breakpoint(target, breakpoint);
+			retval = vexriscv_remove_breakpoint(target, breakpoint);
 			if (retval != ERROR_OK)
 				return retval;
 		}
 	}
 
 	/* Unstall */
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_HALT_CLEAR | (step ? RISCV_SPINAL_FLAGS_STEP : 0))) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_CLEAR | (step ? vexriscv_FLAGS_STEP : 0))) != ERROR_OK) {
 		LOG_ERROR("Error while unstalling the CPU");
 		return error;
 	}
@@ -1272,47 +1272,47 @@ static int riscv_spinal_resume_or_step(struct target *target, int current,
 		target->debug_reason = DBG_REASON_NOTHALTED;
 
 	/* Registers are now invalid */
-	register_cache_invalidate(riscv_spinal->core_cache);
+	register_cache_invalidate(vexriscv->core_cache);
 
 	if (!debug_execution) {
 		target->state = TARGET_RUNNING;
 		target_call_event_callbacks(target, TARGET_EVENT_RESUMED);
-		LOG_DEBUG("Target resumed at 0x%08" PRIx32, *((uint32_t*)riscv_spinal->regs->pc.value));
+		LOG_DEBUG("Target resumed at 0x%08" PRIx32, *((uint32_t*)vexriscv->regs->pc.value));
 	} else {
 		target->state = TARGET_DEBUG_RUNNING;
 		target_call_event_callbacks(target, TARGET_EVENT_DEBUG_RESUMED);
-		LOG_DEBUG("Target debug resumed at 0x%08" PRIx32, *((uint32_t*)riscv_spinal->regs->pc.value));
+		LOG_DEBUG("Target debug resumed at 0x%08" PRIx32, *((uint32_t*)vexriscv->regs->pc.value));
 	}
 
 	return ERROR_OK;
 }
 
-static int riscv_spinal_resume(struct target *target, int current,
+static int vexriscv_resume(struct target *target, int current,
 		uint32_t address, int handle_breakpoints, int debug_execution)
 {
-	return riscv_spinal_resume_or_step(target, current, address,
+	return vexriscv_resume_or_step(target, current, address,
 				   handle_breakpoints,
 				   debug_execution,
 				   NO_SINGLE_STEP);
 }
 
-static int riscv_spinal_step(struct target *target, int current,
+static int vexriscv_step(struct target *target, int current,
 		     uint32_t address, int handle_breakpoints)
 {
-	return riscv_spinal_resume_or_step(target, current, address,
+	return vexriscv_resume_or_step(target, current, address,
 				   handle_breakpoints,
 				   0,
 				   SINGLE_STEP);
 
 }
 
-static int riscv_spinal_examine(struct target *target)
+static int vexriscv_examine(struct target *target)
 {
-	LOG_DEBUG("riscv_spinal_examine");
-	/*struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
-	struct reg *reg_list = calloc(riscv_spinal->nb_regs, sizeof(struct reg));
+	LOG_DEBUG("vexriscv_examine");
+	/*struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	struct reg *reg_list = calloc(vexriscv->nb_regs, sizeof(struct reg));
 
-	for (int i = 0; i < riscv_spinal->nb_regs; i++) {
+	for (int i = 0; i < vexriscv->nb_regs; i++) {
 		reg_list[i].dirty = 0;
 		reg_list[i].valid = 0;
 	}*/
@@ -1322,12 +1322,12 @@ static int riscv_spinal_examine(struct target *target)
 
 		target_set_examined(target);
 		//Soft reset
-		riscv_spinal_assert_reset(target);
-		riscv_spinal_deassert_reset(target);
+		vexriscv_assert_reset(target);
+		vexriscv_deassert_reset(target);
 
 
 		uint32_t running;
-		int retval = riscv_spinal_is_running(target,&running);
+		int retval = vexriscv_is_running(target,&running);
 
 		if (retval != ERROR_OK) {
 			LOG_ERROR("Couldn't read the CPU state");
@@ -1353,22 +1353,22 @@ static int riscv_spinal_examine(struct target *target)
 	return ERROR_OK;
 }
 
-static int riscv_spinal_soft_reset_halt(struct target *target)
+static int vexriscv_soft_reset_halt(struct target *target)
 {
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("-");
 
 
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_RESET_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}
-	if ((error =  riscv_spinal_write32(target, riscv_spinal->dbgBase,RISCV_SPINAL_FLAGS_RESET_CLEAR)) != ERROR_OK) {
+	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}
@@ -1378,14 +1378,14 @@ static int riscv_spinal_soft_reset_halt(struct target *target)
 }
 
 
-static int riscv_spinal_add_watchpoint(struct target *target,
+static int vexriscv_add_watchpoint(struct target *target,
 			       struct watchpoint *watchpoint)
 {
 	LOG_ERROR("%s: implement me", __func__);
 	return ERROR_OK;
 }
 
-static int riscv_spinal_remove_watchpoint(struct target *target,
+static int vexriscv_remove_watchpoint(struct target *target,
 				  struct watchpoint *watchpoint)
 {
 	LOG_ERROR("%s: implement me", __func__);
@@ -1393,36 +1393,36 @@ static int riscv_spinal_remove_watchpoint(struct target *target,
 }
 
 
-COMMAND_HANDLER(riscv_spinal_handle_readWaitCycles_command)
+COMMAND_HANDLER(vexriscv_handle_readWaitCycles_command)
 {
 	if(CMD_ARGC != 1)
 		return ERROR_COMMAND_ARGUMENT_INVALID;
 	struct target* target = get_current_target(CMD_CTX);
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], riscv_spinal->readWaitCycles);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], vexriscv->readWaitCycles);
 	return ERROR_OK;
 }
 
-COMMAND_HANDLER(riscv_spinal_handle_cpuConfigFile_command)
+COMMAND_HANDLER(vexriscv_handle_cpuConfigFile_command)
 {
 	if(CMD_ARGC != 1)
 		return ERROR_COMMAND_ARGUMENT_INVALID;
 	struct target* target = get_current_target(CMD_CTX);
-	struct riscv_spinal_common *riscv_spinal = target_to_riscv_spinal(target);
-	riscv_spinal->cpuConfigFile = strdup(CMD_ARGV[0]);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv->cpuConfigFile = strdup(CMD_ARGV[0]);
 	return ERROR_OK;
 }
 
-static const struct command_registration riscv_spinal_exec_command_handlers[] = {
+static const struct command_registration vexriscv_exec_command_handlers[] = {
 		{
 			.name = "readWaitCycles",
-			.handler = riscv_spinal_handle_readWaitCycles_command,
+			.handler = vexriscv_handle_readWaitCycles_command,
 			.mode = COMMAND_CONFIG,
 			.help = "Number of JTAG cycle to wait before getting jtag read responses",
 			.usage = "value",
 		},{
 			.name = "cpuConfigFile",
-			.handler = riscv_spinal_handle_cpuConfigFile_command,
+			.handler = vexriscv_handle_cpuConfigFile_command,
 			.mode = COMMAND_CONFIG,
 			.help = "Path to the autogenerated configuration file",
 			.usage = "filePath",
@@ -1430,43 +1430,43 @@ static const struct command_registration riscv_spinal_exec_command_handlers[] = 
 	COMMAND_REGISTRATION_DONE
 };
 
-const struct command_registration riscv_spinal_command_handlers[] = {
+const struct command_registration vexriscv_command_handlers[] = {
 	{
-		.name = "riscv_spinal",
+		.name = "vexriscv",
 		.mode = COMMAND_ANY,
-		.help = "riscv_spinal command group",
+		.help = "vexriscv command group",
 		.usage = "",
-		.chain = riscv_spinal_exec_command_handlers,
+		.chain = vexriscv_exec_command_handlers,
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
-struct target_type riscv_spinal_target = {
-	.name = "riscv_spinal",
+struct target_type vexriscv_target = {
+	.name = "vexriscv",
 
-	.target_create = riscv_spinal_target_create,
-	.init_target = riscv_spinal_init_target,
-	.examine = riscv_spinal_examine,
+	.target_create = vexriscv_target_create,
+	.init_target = vexriscv_init_target,
+	.examine = vexriscv_examine,
 
-	.poll = riscv_spinal_poll,
-	.arch_state = riscv_spinal_arch_state,
-	.get_gdb_reg_list = riscv_spinal_get_gdb_reg_list,
+	.poll = vexriscv_poll,
+	.arch_state = vexriscv_arch_state,
+	.get_gdb_reg_list = vexriscv_get_gdb_reg_list,
 
-	.halt = riscv_spinal_halt,
-	.resume = riscv_spinal_resume,
-	.step = riscv_spinal_step,
+	.halt = vexriscv_halt,
+	.resume = vexriscv_resume,
+	.step = vexriscv_step,
 
-	.add_breakpoint = riscv_spinal_add_breakpoint,
-	.remove_breakpoint = riscv_spinal_remove_breakpoint,
-	.add_watchpoint = riscv_spinal_add_watchpoint,
-	.remove_watchpoint = riscv_spinal_remove_watchpoint,
+	.add_breakpoint = vexriscv_add_breakpoint,
+	.remove_breakpoint = vexriscv_remove_breakpoint,
+	.add_watchpoint = vexriscv_add_watchpoint,
+	.remove_watchpoint = vexriscv_remove_watchpoint,
 
-	.commands = riscv_spinal_command_handlers,
+	.commands = vexriscv_command_handlers,
 
-	.assert_reset = riscv_spinal_assert_reset,
-	.deassert_reset = riscv_spinal_deassert_reset,
-	.soft_reset_halt = riscv_spinal_soft_reset_halt,
+	.assert_reset = vexriscv_assert_reset,
+	.deassert_reset = vexriscv_deassert_reset,
+	.soft_reset_halt = vexriscv_soft_reset_halt,
 
-	.read_memory = riscv_spinal_read_memory,
-	.write_memory = riscv_spinal_write_memory,
+	.read_memory = vexriscv_read_memory,
+	.write_memory = vexriscv_write_memory,
 };

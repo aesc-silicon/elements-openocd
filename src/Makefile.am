@@ -20,6 +20,8 @@ MAINFILE = main.c
 openocd_SOURCES = $(MAINFILE)
 openocd_LDADD = libopenocd.la
 
+openocd_LDADD += -lyaml
+
 if INTERNAL_JIMTCL
 openocd_LDADD += $(top_builddir)/jimtcl/libjim.a
 else
