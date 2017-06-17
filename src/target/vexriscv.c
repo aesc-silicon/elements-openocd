@@ -1165,8 +1165,8 @@ static int vexriscv_add_breakpoint(struct target *target,
 	if (breakpoint->orig_instr != NULL)
 		free(breakpoint->orig_instr);
 
-	breakpoint->orig_instr = malloc(breakpoint->length);
-	memcpy(breakpoint->orig_instr, &data, breakpoint->length);
+	breakpoint->orig_instr = malloc(4);
+	memcpy(breakpoint->orig_instr, &data, 4);
 
 	/* Sub in the vexriscv trap instruction */
 	retval = vexriscv_write32(target,

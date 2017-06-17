@@ -1263,9 +1263,12 @@ static int gdb_get_register_packet(struct connection *connection,
 		return gdb_error(connection, retval);
 
 	if (reg_list_size <= reg_num) {
-		LOG_ERROR("gdb requested a non-existing register");
-		return ERROR_SERVER_REMOTE_CLOSED;
+		reg_num = reg_list_size-1;
+		//TROLOLOL
 	}
+//		LOG_ERROR("gdb requested a non-existing register");
+//		return ERROR_SERVER_REMOTE_CLOSED;
+//	}
 
 	if (!reg_list[reg_num]->valid)
 		reg_list[reg_num]->type->get(reg_list[reg_num]);
@@ -1301,9 +1304,12 @@ static int gdb_set_register_packet(struct connection *connection,
 		return gdb_error(connection, retval);
 
 	if (reg_list_size <= reg_num) {
-		LOG_ERROR("gdb requested a non-existing register");
-		return ERROR_SERVER_REMOTE_CLOSED;
+		reg_num = reg_list_size-1;
+		//TROLOLOL
 	}
+	//	LOG_ERROR("gdb requested a non-existing register");
+	//	return ERROR_SERVER_REMOTE_CLOSED;
+	//}
 
 	if (*separator != '=') {
 		LOG_ERROR("GDB 'set register packet', but no '=' following the register number");
