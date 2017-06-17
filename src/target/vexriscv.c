@@ -1049,7 +1049,6 @@ static void vexriscv_read_rsp_splited(struct target *target,uint32_t *data, uint
 static int vexriscv_read_memory(struct target *target, uint32_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
-	int rsp;
 	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
@@ -1065,18 +1064,20 @@ static int vexriscv_read_memory(struct target *target, uint32_t address,
 		address += size;
 		tPtr += size + 1;
 	}
-	rsp = jtag_execute_queue();
+	if(jtag_execute_queue())
+		return ERROR_FAIL;
 
 	idx = count;
 	tPtr = t;
 	while(idx--){
-		if((tPtr[0] & 3) != 1) return ERROR_JTAG_DEVICE_ERROR; //"TAP communication problem"
+		if((tPtr[0] & 3) != 1)
+			return ERROR_JTAG_DEVICE_ERROR; //"TAP communication problem"
 		bit_copy(buffer,0,tPtr,2,size*8);
 		tPtr += size + 1;
 		buffer += size;
 	}
 	free(t);
-	return rsp;
+	return ERROR_OK;
 }
 
 static int vexriscv_write_memory(struct target *target, uint32_t address,
@@ -1096,7 +1097,9 @@ static int vexriscv_write_memory(struct target *target, uint32_t address,
 		buffer += size;
 	}
 
-	return jtag_execute_queue();
+	if(jtag_execute_queue())
+		return ERROR_FAIL;
+	return ERROR_OK;
 }
 
 static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data){
