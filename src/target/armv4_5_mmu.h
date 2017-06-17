@@ -13,13 +13,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef ARMV4_5_MMU_H
-#define ARMV4_5_MMU_H
+#ifndef OPENOCD_TARGET_ARMV4_5_MMU_H
+#define OPENOCD_TARGET_ARMV4_5_MMU_H
 
 #include "armv4_5_cache.h"
 
@@ -27,8 +25,9 @@ struct target;
 
 struct armv4_5_mmu_common {
 	int (*get_ttb)(struct target *target, uint32_t *result);
-	int (*read_memory)(struct target *target, uint32_t address, uint32_t size, uint32_t count, uint8_t *buffer);
-	int (*write_memory)(struct target *target, uint32_t address, uint32_t size, uint32_t count, const uint8_t *buffer);
+	int (*read_memory)(struct target *target, target_addr_t address, uint32_t size, uint32_t count, uint8_t *buffer);
+	int (*write_memory)(struct target *target, target_addr_t address,
+			    uint32_t size, uint32_t count, const uint8_t *buffer);
 	int (*disable_mmu_caches)(struct target *target, int mmu, int d_u_cache, int i_cache);
 	int (*enable_mmu_caches)(struct target *target, int mmu, int d_u_cache, int i_cache);
 	struct armv4_5_cache_common armv4_5_cache;
@@ -55,4 +54,4 @@ enum {
 	ARMV4_5_MMU_R_BIT = 0x200
 };
 
-#endif /* ARMV4_5_MMU_H */
+#endif /* OPENOCD_TARGET_ARMV4_5_MMU_H */

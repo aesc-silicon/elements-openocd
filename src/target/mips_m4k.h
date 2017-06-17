@@ -18,13 +18,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef MIPS_M4K_H
-#define MIPS_M4K_H
+#ifndef OPENOCD_TARGET_MIPS_M4K_H
+#define OPENOCD_TARGET_MIPS_M4K_H
 
 struct target;
 
@@ -43,6 +41,17 @@ target_to_m4k(struct target *target)
 			struct mips_m4k_common, mips32);
 }
 
+static inline void mips_m4k_isa_filter(enum mips32_isa_imp isa_imp, target_addr_t  *addr)
+{
+	if (isa_imp <= 1) {	/* if only one isa implemented */
+		target_addr_t address = (*addr & ~1) | isa_imp;
+
+		if (address != *addr) {
+			LOG_USER("Warning: isa bit changed due to isa not implemented");
+			*addr = address;
+		}
+	}
+}
 extern const struct command_registration mips_m4k_command_handlers[];
 
-#endif	/*MIPS_M4K_H*/
+#endif /* OPENOCD_TARGET_MIPS_M4K_H */

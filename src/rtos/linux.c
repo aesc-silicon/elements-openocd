@@ -14,9 +14,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -107,11 +105,11 @@ static int linux_os_dummy_update(struct rtos *rtos)
 	return 0;
 }
 
-static int linux_compute_virt2phys(struct target *target, uint32_t address)
+static int linux_compute_virt2phys(struct target *target, target_addr_t address)
 {
 	struct linux_os *linux_os = (struct linux_os *)
 		target->rtos->rtos_specific_params;
-	uint32_t pa = 0;
+	target_addr_t pa = 0;
 	int retval = target->type->virt2phys(target, address, &pa);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Cannot compute linux virt2phys translation");
@@ -1215,7 +1213,7 @@ int linux_thread_extra_info(struct target *target,
 		if (temp->threadid == threadid) {
 			char *pid = " PID: ";
 			char *pid_current = "*PID: ";
-			char *name = "NAME: ";
+			char *name = "Name: ";
 			int str_size = strlen(pid) + strlen(name);
 			char *tmp_str = calloc(1, str_size + 50);
 			char *tmp_str_ptr = tmp_str;
@@ -1227,13 +1225,12 @@ int linux_thread_extra_info(struct target *target,
 			else
 				tmp_str_ptr += sprintf(tmp_str_ptr, "%s", pid);
 
-			tmp_str_ptr +=
-				sprintf(tmp_str_ptr, "%d", (int)temp->pid);
-			tmp_str_ptr += sprintf(tmp_str_ptr, "%s", " | ");
+			tmp_str_ptr += sprintf(tmp_str_ptr, "%d, ", (int)temp->pid);
 			sprintf(tmp_str_ptr, "%s", name);
 			sprintf(tmp_str_ptr, "%s", temp->name);
 			char *hex_str = calloc(1, strlen(tmp_str) * 2 + 1);
-			int pkt_len = hexify(hex_str, tmp_str, 0, strlen(tmp_str) * 2 + 1);
+			size_t pkt_len = hexify(hex_str, (const uint8_t *)tmp_str,
+				strlen(tmp_str), strlen(tmp_str) * 2 + 1);
 			gdb_put_packet(connection, hex_str, pkt_len);
 			free(hex_str);
 			free(tmp_str);

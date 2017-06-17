@@ -17,9 +17,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -836,10 +834,13 @@ FLASH_BANK_COMMAND_HANDLER(cfi_flash_bank_command)
 	cfi_info->x16_as_x8 = 0;
 	cfi_info->jedec_probe = 0;
 	cfi_info->not_cfi = 0;
+	cfi_info->data_swap = 0;
 
 	for (unsigned i = 6; i < CMD_ARGC; i++) {
 		if (strcmp(CMD_ARGV[i], "x16_as_x8") == 0)
 			cfi_info->x16_as_x8 = 1;
+		else if (strcmp(CMD_ARGV[i], "data_swap") == 0)
+			cfi_info->data_swap = 1;
 		else if (strcmp(CMD_ARGV[i], "bus_swap") == 0)
 			bus_swap = 1;
 		else if (strcmp(CMD_ARGV[i], "jedec_probe") == 0)
@@ -1311,7 +1312,7 @@ static int cfi_intel_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	busy_pattern_val  = cfi_command_val(bank, 0x80);
 	error_pattern_val = cfi_command_val(bank, 0x7e);
 
-	LOG_DEBUG("Using target buffer at 0x%08" PRIx32 " and of size 0x%04" PRIx32,
+	LOG_DEBUG("Using target buffer at " TARGET_ADDR_FMT " and of size 0x%04" PRIx32,
 		source->address, buffer_size);
 
 	/* Programming main loop */
@@ -1423,50 +1424,50 @@ static int cfi_spansion_write_block_mips(struct flash_bank *bank, const uint8_t 
 
 	static const uint32_t mips_word_16_code[] = {
 		/* start:	*/
-		MIPS32_LHU(9, 0, 4),			/* lhu $t1, ($a0)		; out = &saddr */
-		MIPS32_ADDI(4, 4, 2),			/* addi $a0, $a0, 2		; saddr += 2 */
-		MIPS32_SH(13, 0, 12),			/* sh $t5, ($t4)		; *fl_unl_addr1 = fl_unl_cmd1 */
-		MIPS32_SH(15, 0, 14),			/* sh $t7, ($t6)		; *fl_unl_addr2 = fl_unl_cmd2 */
-		MIPS32_SH(7, 0, 12),			/* sh $a3, ($t4)		; *fl_unl_addr1 = fl_write_cmd */
-		MIPS32_SH(9, 0, 5),				/* sh $t1, ($a1)		; *daddr = out */
+		MIPS32_LHU(0, 9, 0, 4),		/* lhu $t1, ($a0)		; out = &saddr */
+		MIPS32_ADDI(0, 4, 4, 2),	/* addi $a0, $a0, 2		; saddr += 2 */
+		MIPS32_SH(0, 13, 0, 12),	/* sh $t5, ($t4)		; *fl_unl_addr1 = fl_unl_cmd1 */
+		MIPS32_SH(0, 15, 0, 14),	/* sh $t7, ($t6)		; *fl_unl_addr2 = fl_unl_cmd2 */
+		MIPS32_SH(0, 7, 0, 12),		/* sh $a3, ($t4)		; *fl_unl_addr1 = fl_write_cmd */
+		MIPS32_SH(0, 9, 0, 5),		/* sh $t1, ($a1)		; *daddr = out */
 		MIPS32_NOP,						/* nop */
 		/* busy:	*/
-		MIPS32_LHU(10, 0, 5),			/* lhu $t2, ($a1)		; temp1 = *daddr */
-		MIPS32_XOR(11, 9, 10),			/* xor $t3, $a0, $t2	; temp2 = out ^ temp1; */
-		MIPS32_AND(11, 8, 11),			/* and $t3, $t0, $t3	; temp2 = temp2 & DQ7mask */
-		MIPS32_BNE(11, 8, 13),			/* bne $t3, $t0, cont	; if (temp2 != DQ7mask) goto cont */
-		MIPS32_NOP,						/* nop									*/
+		MIPS32_LHU(0, 10, 0, 5),		/* lhu $t2, ($a1)		; temp1 = *daddr */
+		MIPS32_XOR(0, 11, 9, 10),		/* xor $t3, $a0, $t2	; temp2 = out ^ temp1; */
+		MIPS32_AND(0, 11, 8, 11),		/* and $t3, $t0, $t3	; temp2 = temp2 & DQ7mask */
+		MIPS32_BNE(0, 11, 8, 13),		/* bne $t3, $t0, cont	; if (temp2 != DQ7mask) goto cont */
+		MIPS32_NOP,						/* nop					*/
 
-		MIPS32_SRL(10, 8, 2),			/* srl $t2,$t0,2		; temp1 = DQ7mask >> 2 */
-		MIPS32_AND(11, 10, 11),			/* and $t3, $t2, $t3	; temp2 = temp2 & temp1	*/
-		MIPS32_BNE(11, 10, NEG16(8)),	/* bne $t3, $t2, busy	; if (temp2 != temp1) goto busy	*/
-		MIPS32_NOP,						/* nop									*/
+		MIPS32_SRL(0, 10, 8, 2),		/* srl $t2,$t0,2		; temp1 = DQ7mask >> 2 */
+		MIPS32_AND(0, 11, 10, 11),			/* and $t3, $t2, $t3	; temp2 = temp2 & temp1	*/
+		MIPS32_BNE(0, 11, 10, NEG16(8)),	/* bne $t3, $t2, busy	; if (temp2 != temp1) goto busy	*/
+		MIPS32_NOP,						/* nop					*/
 
-		MIPS32_LHU(10, 0, 5),			/* lhu $t2, ($a1)		; temp1 = *daddr */
-		MIPS32_XOR(11, 9, 10),			/* xor $t3, $a0, $t2	; temp2 = out ^ temp1; */
-		MIPS32_AND(11, 8, 11),			/* and $t3, $t0, $t3	; temp2 = temp2 & DQ7mask */
-		MIPS32_BNE(11, 8, 4),			/* bne $t3, $t0, cont	; if (temp2 != DQ7mask) goto cont */
+		MIPS32_LHU(0, 10, 0, 5),		/* lhu $t2, ($a1)		; temp1 = *daddr */
+		MIPS32_XOR(0, 11, 9, 10),		/* xor $t3, $a0, $t2	; temp2 = out ^ temp1; */
+		MIPS32_AND(0, 11, 8, 11),		/* and $t3, $t0, $t3	; temp2 = temp2 & DQ7mask */
+		MIPS32_BNE(0, 11, 8, 4),		/* bne $t3, $t0, cont	; if (temp2 != DQ7mask) goto cont */
 		MIPS32_NOP,						/* nop */
 
-		MIPS32_XOR(9, 9, 9),			/* xor $t1, $t1, $t1	; out = 0 */
-		MIPS32_BEQ(9, 0, 11),			/* beq $t1, $zero, done	; if (out == 0) goto done */
+		MIPS32_XOR(0, 9, 9, 9),			/* xor $t1, $t1, $t1	; out = 0 */
+		MIPS32_BEQ(0, 9, 0, 11),			/* beq $t1, $zero, done	; if (out == 0) goto done */
 		MIPS32_NOP,						/* nop */
 		/* cont:	*/
-		MIPS32_ADDI(6, 6, NEG16(1)),	/* addi, $a2, $a2, -1	; numwrites-- */
-		MIPS32_BNE(6, 0, 5),			/* bne $a2, $zero, cont2	; if (numwrite != 0) goto cont2 */
+		MIPS32_ADDI(0, 6, 6, NEG16(1)),	/* addi, $a2, $a2, -1	; numwrites-- */
+		MIPS32_BNE(0, 6, 0, 5),		/* bne $a2, $zero, cont2	; if (numwrite != 0) goto cont2 */
 		MIPS32_NOP,						/* nop */
 
-		MIPS32_LUI(9, 0),				/* lui $t1, 0 */
-		MIPS32_ORI(9, 9, 0x80),			/* ori $t1, $t1, 0x80	; out = 0x80 */
+		MIPS32_LUI(0, 9, 0),				/* lui $t1, 0 */
+		MIPS32_ORI(0, 9, 9, 0x80),			/* ori $t1, $t1, 0x80	; out = 0x80 */
 
-		MIPS32_B(4),					/* b done			; goto done */
+		MIPS32_B(0, 4),					/* b done			; goto done */
 		MIPS32_NOP,						/* nop */
 		/* cont2:	*/
-		MIPS32_ADDI(5, 5, 2),			/* addi $a0, $a0, 2	; daddr += 2 */
-		MIPS32_B(NEG16(33)),			/* b start			; goto start */
+		MIPS32_ADDI(0, 5, 5, 2),			/* addi $a0, $a0, 2	; daddr += 2 */
+		MIPS32_B(0, NEG16(33)),			/* b start			; goto start */
 		MIPS32_NOP,						/* nop */
 		/* done: */
-		MIPS32_SDBBP,					/* sdbbp			; break(); */
+		MIPS32_SDBBP(0),					/* sdbbp			; break(); */
 	};
 
 	mips32_info.common_magic = MIPS32_COMMON_MAGIC;
@@ -2333,6 +2334,8 @@ static int cfi_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t of
 	int blk_count;	/* number of bus_width bytes for block copy */
 	uint8_t current_word[CFI_MAX_BUS_WIDTH * 4];	/* word (bus_width size) currently being
 							 *programmed */
+	uint8_t *swapped_buffer = NULL;
+	const uint8_t *real_buffer = NULL;
 	int i;
 	int retval;
 
@@ -2359,13 +2362,35 @@ static int cfi_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t of
 			return retval;
 
 		/* replace only bytes that must be written */
-		for (i = align; (i < bank->bus_width) && (count > 0); i++, count--)
-			current_word[i] = *buffer++;
+		for (i = align;
+		     (i < bank->bus_width) && (count > 0);
+		     i++, count--)
+			if (cfi_info->data_swap)
+				/* data bytes are swapped (reverse endianness) */
+				current_word[bank->bus_width - i] = *buffer++;
+			else
+				current_word[i] = *buffer++;
 
 		retval = cfi_write_word(bank, current_word, write_p);
 		if (retval != ERROR_OK)
 			return retval;
 		write_p += bank->bus_width;
+	}
+
+	if (cfi_info->data_swap && count) {
+		swapped_buffer = malloc(count & ~(bank->bus_width - 1));
+		switch (bank->bus_width) {
+		case 2:
+			buf_bswap16(swapped_buffer, buffer,
+				    count & ~(bank->bus_width - 1));
+			break;
+		case 4:
+			buf_bswap32(swapped_buffer, buffer,
+				    count & ~(bank->bus_width - 1));
+			break;
+		}
+		real_buffer = buffer;
+		buffer = swapped_buffer;
 	}
 
 	/* handle blocks of bus_size aligned bytes */
@@ -2437,6 +2462,11 @@ static int cfi_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t of
 			return retval;
 	}
 
+	if (swapped_buffer) {
+		buffer = real_buffer + (buffer - swapped_buffer);
+		free(swapped_buffer);
+	}
+
 	/* return to read array mode, so we can read from flash again for padding */
 	retval = cfi_reset(bank);
 	if (retval != ERROR_OK)
@@ -2453,7 +2483,11 @@ static int cfi_write(struct flash_bank *bank, const uint8_t *buffer, uint32_t of
 
 		/* replace only bytes that must be written */
 		for (i = 0; (i < bank->bus_width) && (count > 0); i++, count--)
-			current_word[i] = *buffer++;
+			if (cfi_info->data_swap)
+				/* data bytes are swapped (reverse endianness) */
+				current_word[bank->bus_width - i] = *buffer++;
+			else
+				current_word[i] = *buffer++;
 
 		retval = cfi_write_word(bank, current_word, write_p);
 		if (retval != ERROR_OK)

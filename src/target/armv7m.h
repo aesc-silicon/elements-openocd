@@ -19,13 +19,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef ARMV7M_COMMON_H
-#define ARMV7M_COMMON_H
+#ifndef OPENOCD_TARGET_ARMV7M_H
+#define OPENOCD_TARGET_ARMV7M_H
 
 #include "arm_adi_v5.h"
 #include "arm.h"
@@ -134,6 +132,8 @@ enum {
 enum {
 	FP_NONE = 0,
 	FPv4_SP,
+	FPv5_SP,
+	FPv5_DP,
 };
 
 #define ARMV7M_NUM_CORE_REGS (ARMV7M_xPSR + 1)
@@ -203,19 +203,19 @@ int armv7m_init_arch_info(struct target *target, struct armv7m_common *armv7m);
 int armv7m_run_algorithm(struct target *target,
 		int num_mem_params, struct mem_param *mem_params,
 		int num_reg_params, struct reg_param *reg_params,
-		uint32_t entry_point, uint32_t exit_point,
+		target_addr_t entry_point, target_addr_t exit_point,
 		int timeout_ms, void *arch_info);
 
 int armv7m_start_algorithm(struct target *target,
 		int num_mem_params, struct mem_param *mem_params,
 		int num_reg_params, struct reg_param *reg_params,
-		uint32_t entry_point, uint32_t exit_point,
+		target_addr_t entry_point, target_addr_t exit_point,
 		void *arch_info);
 
 int armv7m_wait_algorithm(struct target *target,
 		int num_mem_params, struct mem_param *mem_params,
 		int num_reg_params, struct reg_param *reg_params,
-		uint32_t exit_point, int timeout_ms,
+		target_addr_t exit_point, int timeout_ms,
 		void *arch_info);
 
 int armv7m_invalidate_core_regs(struct target *target);
@@ -223,12 +223,12 @@ int armv7m_invalidate_core_regs(struct target *target);
 int armv7m_restore_context(struct target *target);
 
 int armv7m_checksum_memory(struct target *target,
-		uint32_t address, uint32_t count, uint32_t *checksum);
+		target_addr_t address, uint32_t count, uint32_t *checksum);
 int armv7m_blank_check_memory(struct target *target,
-		uint32_t address, uint32_t count, uint32_t *blank);
+		target_addr_t address, uint32_t count, uint32_t *blank, uint8_t erased_value);
 
 int armv7m_maybe_skip_bkpt_inst(struct target *target, bool *inst_found);
 
 extern const struct command_registration armv7m_command_handlers[];
 
-#endif /* ARMV7M_H */
+#endif /* OPENOCD_TARGET_ARMV7M_H */

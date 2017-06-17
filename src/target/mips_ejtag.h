@@ -15,13 +15,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef MIPS_EJTAG
-#define MIPS_EJTAG
+#ifndef OPENOCD_TARGET_MIPS_EJTAG_H
+#define OPENOCD_TARGET_MIPS_EJTAG_H
 
 #include <jtag/jtag.h>
 
@@ -60,6 +58,7 @@
 #define EJTAG_CTRL_DERR			(1 << 10)
 #define EJTAG_CTRL_DSTRT		(1 << 11)
 #define EJTAG_CTRL_JTAGBRK		(1 << 12)
+#define EJTAG_CTRL_DBGISA		(1 << 13)
 #define EJTAG_CTRL_SETDEV		(1 << 14)
 #define EJTAG_CTRL_PROBEN		(1 << 15)
 #define EJTAG_CTRL_PRRST		(1 << 16)
@@ -144,7 +143,7 @@
 #define EJTAG_V20_IBC_OFFS		0x4	/* IBC Offset */
 #define EJTAG_V20_IBM_OFFS		0x8
 #define EJTAG_V20_IBAn_STEP		0x10	/* Offset for next channel */
-#define EJTAG_V20_DBS			0xFF30008
+#define EJTAG_V20_DBS			0xFF300008
 #define EJTAG_V20_DBA0			0xFF300200
 #define EJTAG_V20_DBC_OFFS		0x4
 #define EJTAG_V20_DBM_OFFS		0x8
@@ -184,6 +183,9 @@ struct mips_ejtag {
 	uint32_t idcode;
 	uint32_t ejtag_ctrl;
 	int fast_access_save;
+	uint32_t config_regs;	/* number of config registers read */
+	uint32_t config[4];	/* cp0 config to config3 */
+
 	uint32_t reg8;
 	uint32_t reg9;
 	unsigned scan_delay;
@@ -191,6 +193,8 @@ struct mips_ejtag {
 	uint32_t pa_ctrl;
 	uint32_t pa_addr;
 	unsigned int ejtag_version;
+	uint32_t isa;
+	uint32_t endianness;
 
 	/* Memory-Mapped Registers. This addresses are not same on different
 	 * EJTAG versions. */
@@ -212,17 +216,16 @@ struct mips_ejtag {
 	uint32_t ejtag_dba_step_size;	/* size of step till next *DBAn register. */
 };
 
-void mips_ejtag_set_instr(struct mips_ejtag *ejtag_info,
-		int new_instr);
+void mips_ejtag_set_instr(struct mips_ejtag *ejtag_info, uint32_t new_instr);
 int mips_ejtag_enter_debug(struct mips_ejtag *ejtag_info);
 int mips_ejtag_exit_debug(struct mips_ejtag *ejtag_info);
-int mips_ejtag_get_idcode(struct mips_ejtag *ejtag_info, uint32_t *idcode);
+int mips_ejtag_get_idcode(struct mips_ejtag *ejtag_info);
 void mips_ejtag_add_scan_96(struct mips_ejtag *ejtag_info,
 			    uint32_t ctrl, uint32_t data, uint8_t *in_scan_buf);
 void mips_ejtag_drscan_32_out(struct mips_ejtag *ejtag_info, uint32_t data);
 int mips_ejtag_drscan_32(struct mips_ejtag *ejtag_info, uint32_t *data);
 void mips_ejtag_drscan_8_out(struct mips_ejtag *ejtag_info, uint8_t data);
-int mips_ejtag_drscan_8(struct mips_ejtag *ejtag_info, uint32_t *data);
+int mips_ejtag_drscan_8(struct mips_ejtag *ejtag_info, uint8_t *data);
 int mips_ejtag_fastdata_scan(struct mips_ejtag *ejtag_info, int write_t, uint32_t *data);
 
 int mips_ejtag_init(struct mips_ejtag *ejtag_info);
@@ -234,4 +237,4 @@ static inline void mips_le_to_h_u32(jtag_callback_data_t arg)
 	*((uint32_t *)arg) = le_to_h_u32(in);
 }
 
-#endif /* MIPS_EJTAG */
+#endif /* OPENOCD_TARGET_MIPS_EJTAG_H */

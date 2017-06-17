@@ -22,13 +22,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef ARM7_9_COMMON_H
-#define ARM7_9_COMMON_H
+#ifndef OPENOCD_TARGET_ARM7_9_COMMON_H
+#define OPENOCD_TARGET_ARM7_9_COMMON_H
 
 #include "arm.h"
 #include "arm_jtag.h"
@@ -124,13 +122,13 @@ struct arm7_9_common {
 	 * Used as a fallback when bulk writes are unavailable, or for writing data needed to
 	 * do the bulk writes.
 	 */
-	int (*write_memory)(struct target *target, uint32_t address,
+	int (*write_memory)(struct target *target, target_addr_t address,
 			uint32_t size, uint32_t count, const uint8_t *buffer);
 	/**
 	 * Write target memory in multiples of 4 bytes, optimized for
 	 * writing large quantities of data.
 	 */
-	int (*bulk_write_memory)(struct target *target, uint32_t address,
+	int (*bulk_write_memory)(struct target *target, target_addr_t address,
 			uint32_t count, const uint8_t *buffer);
 };
 
@@ -157,19 +155,19 @@ int arm7_9_early_halt(struct target *target);
 int arm7_9_soft_reset_halt(struct target *target);
 
 int arm7_9_halt(struct target *target);
-int arm7_9_resume(struct target *target, int current, uint32_t address,
+int arm7_9_resume(struct target *target, int current, target_addr_t address,
 		int handle_breakpoints, int debug_execution);
-int arm7_9_step(struct target *target, int current, uint32_t address,
+int arm7_9_step(struct target *target, int current, target_addr_t address,
 		int handle_breakpoints);
-int arm7_9_read_memory(struct target *target, uint32_t address,
+int arm7_9_read_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, uint8_t *buffer);
-int arm7_9_write_memory(struct target *target, uint32_t address,
+int arm7_9_write_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, const uint8_t *buffer);
-int arm7_9_write_memory_opt(struct target *target, uint32_t address,
+int arm7_9_write_memory_opt(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, const uint8_t *buffer);
 int arm7_9_write_memory_no_opt(struct target *target, uint32_t address,
 		uint32_t size, uint32_t count, const uint8_t *buffer);
-int arm7_9_bulk_write_memory(struct target *target, uint32_t address,
+int arm7_9_bulk_write_memory(struct target *target, target_addr_t address,
 		uint32_t count, const uint8_t *buffer);
 
 int arm7_9_run_algorithm(struct target *target, int num_mem_params,
@@ -194,4 +192,4 @@ int arm7_9_endianness_callback(jtag_callback_data_t pu8_in,
 		jtag_callback_data_t i_size, jtag_callback_data_t i_be,
 		jtag_callback_data_t i_flip);
 
-#endif /* ARM7_9_COMMON_H */
+#endif /* OPENOCD_TARGET_ARM7_9_COMMON_H */

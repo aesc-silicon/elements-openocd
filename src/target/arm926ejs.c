@@ -16,9 +16,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -89,7 +87,7 @@ static int arm926ejs_cp15_read(struct target *target, uint32_t op1, uint32_t op2
 
 	jtag_add_dr_scan(jtag_info->tap, 4, fields, TAP_IDLE);
 
-	long long then = timeval_ms();
+	int64_t then = timeval_ms();
 
 	for (;;) {
 		/* rescan with NOP, to wait for the access to complete */
@@ -175,7 +173,7 @@ static int arm926ejs_cp15_write(struct target *target, uint32_t op1, uint32_t op
 
 	jtag_add_dr_scan(jtag_info->tap, 4, fields, TAP_IDLE);
 
-	long long then = timeval_ms();
+	int64_t then = timeval_ms();
 
 	for (;;) {
 		/* rescan with NOP, to wait for the access to complete */
@@ -548,7 +546,7 @@ int arm926ejs_soft_reset_halt(struct target *target)
 	if (retval != ERROR_OK)
 		return retval;
 
-	long long then = timeval_ms();
+	int64_t then = timeval_ms();
 	int timeout;
 	while (!(timeout = ((timeval_ms()-then) > 1000))) {
 		if (buf_get_u32(dbg_stat->value, EICE_DBG_STATUS_DBGACK, 1) == 0) {
@@ -596,7 +594,7 @@ int arm926ejs_soft_reset_halt(struct target *target)
 }
 
 /** Writes a buffer, in the specified word size, with current MMU settings. */
-int arm926ejs_write_memory(struct target *target, uint32_t address,
+int arm926ejs_write_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, const uint8_t *buffer)
 {
 	int retval;
@@ -625,7 +623,7 @@ int arm926ejs_write_memory(struct target *target, uint32_t address,
 				return retval;
 		}
 
-		uint32_t pa;
+		target_addr_t pa;
 		retval = target->type->virt2phys(target, address, &pa);
 		if (retval != ERROR_OK)
 			return retval;
@@ -657,7 +655,7 @@ int arm926ejs_write_memory(struct target *target, uint32_t address,
 }
 
 static int arm926ejs_write_phys_memory(struct target *target,
-		uint32_t address, uint32_t size,
+		target_addr_t address, uint32_t size,
 		uint32_t count, const uint8_t *buffer)
 {
 	struct arm926ejs_common *arm926ejs = target_to_arm926(target);
@@ -667,7 +665,7 @@ static int arm926ejs_write_phys_memory(struct target *target,
 }
 
 static int arm926ejs_read_phys_memory(struct target *target,
-		uint32_t address, uint32_t size,
+		target_addr_t address, uint32_t size,
 		uint32_t count, uint8_t *buffer)
 {
 	struct arm926ejs_common *arm926ejs = target_to_arm926(target);
@@ -738,7 +736,7 @@ COMMAND_HANDLER(arm926ejs_handle_cache_info_command)
 	return armv4_5_handle_cache_info_command(CMD_CTX, &arm926ejs->armv4_5_mmu.armv4_5_cache);
 }
 
-static int arm926ejs_virt2phys(struct target *target, uint32_t virtual, uint32_t *physical)
+static int arm926ejs_virt2phys(struct target *target, target_addr_t virtual, target_addr_t *physical)
 {
 	uint32_t cb;
 	struct arm926ejs_common *arm926ejs = target_to_arm926(target);

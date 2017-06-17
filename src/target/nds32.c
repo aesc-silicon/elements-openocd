@@ -13,9 +13,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -825,7 +823,7 @@ int nds32_read_memory(struct target *target, uint32_t address,
 	return aice_read_mem_unit(aice, address, size, count, buffer);
 }
 
-int nds32_read_phys_memory(struct target *target, uint32_t address,
+int nds32_read_phys_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	struct aice_port_s *aice = target_to_aice(target);
@@ -934,7 +932,7 @@ int nds32_write_memory(struct target *target, uint32_t address,
 	return aice_write_mem_unit(aice, address, size, count, buffer);
 }
 
-int nds32_write_phys_memory(struct target *target, uint32_t address,
+int nds32_write_phys_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, const uint8_t *buffer)
 {
 	struct aice_port_s *aice = target_to_aice(target);
@@ -1676,7 +1674,7 @@ int nds32_init_arch_info(struct target *target, struct nds32 *nds32)
 	return ERROR_OK;
 }
 
-int nds32_virtual_to_physical(struct target *target, uint32_t address, uint32_t *physical)
+int nds32_virtual_to_physical(struct target *target, target_addr_t address, target_addr_t *physical)
 {
 	struct nds32 *nds32 = target_to_nds32(target);
 
@@ -1694,7 +1692,7 @@ int nds32_virtual_to_physical(struct target *target, uint32_t address, uint32_t 
 	return ERROR_FAIL;
 }
 
-int nds32_cache_sync(struct target *target, uint32_t address, uint32_t length)
+int nds32_cache_sync(struct target *target, target_addr_t address, uint32_t length)
 {
 	struct aice_port_s *aice = target_to_aice(target);
 	struct nds32 *nds32 = target_to_nds32(target);
@@ -1740,7 +1738,7 @@ int nds32_cache_sync(struct target *target, uint32_t address, uint32_t length)
 			/* Because PSW.IT is turned off under debug exception, address MUST
 			 * be physical address.  L1I_VA_INVALIDATE uses PSW.IT to decide
 			 * address translation or not. */
-			uint32_t physical_addr;
+			target_addr_t physical_addr;
 			if (ERROR_FAIL == target->type->virt2phys(target, cur_address,
 						&physical_addr))
 				return ERROR_FAIL;
@@ -1766,7 +1764,7 @@ uint32_t nds32_nextpc(struct nds32 *nds32, int current, uint32_t address)
 }
 
 int nds32_step(struct target *target, int current,
-		uint32_t address, int handle_breakpoints)
+		target_addr_t address, int handle_breakpoints)
 {
 	LOG_DEBUG("target->state: %s",
 			target_state_name(target));
@@ -1780,7 +1778,7 @@ int nds32_step(struct target *target, int current,
 
 	address = nds32_nextpc(nds32, current, address);
 
-	LOG_DEBUG("STEP PC %08" PRIx32 "%s", address, !current ? "!" : "");
+	LOG_DEBUG("STEP PC %08" TARGET_PRIxADDR "%s", address, !current ? "!" : "");
 
 	/** set DSSIM */
 	uint32_t ir14_value;
@@ -2122,9 +2120,9 @@ int nds32_poll(struct target *target)
 }
 
 int nds32_resume(struct target *target, int current,
-		uint32_t address, int handle_breakpoints, int debug_execution)
+		target_addr_t address, int handle_breakpoints, int debug_execution)
 {
-	LOG_DEBUG("current %d address %08" PRIx32
+	LOG_DEBUG("current %d address %08" TARGET_PRIxADDR
 			" handle_breakpoints %d"
 			" debug_execution %d",
 			current, address, handle_breakpoints, debug_execution);
@@ -2138,7 +2136,7 @@ int nds32_resume(struct target *target, int current,
 
 	address = nds32_nextpc(nds32, current, address);
 
-	LOG_DEBUG("RESUME PC %08" PRIx32 "%s", address, !current ? "!" : "");
+	LOG_DEBUG("RESUME PC %08" TARGET_PRIxADDR "%s", address, !current ? "!" : "");
 
 	if (!debug_execution)
 		target_free_all_working_areas(target);
@@ -2198,6 +2196,13 @@ int nds32_assert_reset(struct target *target)
 	struct nds32 *nds32 = target_to_nds32(target);
 	struct aice_port_s *aice = target_to_aice(target);
 	struct nds32_cpu_version *cpu_version = &(nds32->cpu_version);
+
+	/* TODO: apply hw reset signal in not examined state */
+	if (!(target_was_examined(target))) {
+		LOG_WARNING("Reset is not asserted because the target is not examined.");
+		LOG_WARNING("Use a reset button or power cycle the target.");
+		return ERROR_TARGET_NOT_EXAMINED;
+	}
 
 	if (target->reset_halt) {
 		if ((nds32->soft_reset_halt)

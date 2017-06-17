@@ -22,9 +22,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1175,8 +1173,8 @@ COMMAND_HANDLER(handle_sleep_command)
 		return retval;
 
 	if (!busy) {
-		long long then = timeval_ms();
-		while (timeval_ms() - then < (long long)duration) {
+		int64_t then = timeval_ms();
+		while (timeval_ms() - then < (int64_t)duration) {
 			target_call_timer_callbacks_now();
 			usleep(1000);
 		}
@@ -1411,6 +1409,8 @@ DEFINE_PARSE_ULONGLONG(_u64,  uint64_t, 0, UINT64_MAX)
 DEFINE_PARSE_ULONGLONG(_u32,  uint32_t, 0, UINT32_MAX)
 DEFINE_PARSE_ULONGLONG(_u16,  uint16_t, 0, UINT16_MAX)
 DEFINE_PARSE_ULONGLONG(_u8,   uint8_t,  0, UINT8_MAX)
+
+DEFINE_PARSE_ULONGLONG(_target_addr, target_addr_t, 0, TARGET_ADDR_MAX)
 
 #define DEFINE_PARSE_LONGLONG(name, type, min, max) \
 	DEFINE_PARSE_WRAPPER(name, type, min, max, long long, _llong)

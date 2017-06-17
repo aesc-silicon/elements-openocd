@@ -19,8 +19,7 @@
  * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  * Contact Information:
  * Intel Corporation
@@ -995,7 +994,7 @@ int lakemont_halt(struct target *t)
 	}
 }
 
-int lakemont_resume(struct target *t, int current, uint32_t address,
+int lakemont_resume(struct target *t, int current, target_addr_t address,
 			int handle_breakpoints, int debug_execution)
 {
 	struct breakpoint *bp = NULL;
@@ -1037,7 +1036,7 @@ int lakemont_resume(struct target *t, int current, uint32_t address,
 }
 
 int lakemont_step(struct target *t, int current,
-			uint32_t address, int handle_breakpoints)
+			target_addr_t address, int handle_breakpoints)
 {
 	struct x86_32_common *x86_32 = target_to_x86_32(t);
 	uint32_t eflags = buf_get_u32(x86_32->cache->reg_list[EFLAGS].value, 0, 32);

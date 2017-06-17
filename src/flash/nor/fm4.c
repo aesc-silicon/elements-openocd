@@ -272,7 +272,7 @@ static int fm4_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 		uint32_t halfwords = MIN(halfword_count, data_workarea->size / 2);
 		uint32_t addr = bank->base + offset;
 
-		LOG_DEBUG("copying %" PRId32 " bytes to SRAM 0x%08" PRIx32,
+		LOG_DEBUG("copying %" PRId32 " bytes to SRAM 0x%08" TARGET_PRIxADDR,
 			MIN(halfwords * 2, byte_count), data_workarea->address);
 
 		retval = target_write_buffer(target, data_workarea->address,
@@ -715,6 +715,7 @@ struct flash_driver fm4_flash = {
 	.probe = fm4_probe,
 	.auto_probe = fm4_auto_probe,
 	.protect_check = fm4_protect_check,
+	.read = default_flash_read,
 	.erase = fm4_flash_erase,
 	.erase_check = default_flash_blank_check,
 	.write = fm4_flash_write,

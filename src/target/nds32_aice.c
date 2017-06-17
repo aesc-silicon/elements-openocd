@@ -13,9 +13,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -44,8 +42,8 @@ int aice_write_reg_64(struct aice_port_s *aice, uint32_t num, uint64_t val)
 	return aice->port->api->write_reg_64(aice->coreid, num, val);
 }
 
-int aice_read_tlb(struct aice_port_s *aice, uint32_t virtual_address,
-		uint32_t *physical_address)
+int aice_read_tlb(struct aice_port_s *aice, target_addr_t virtual_address,
+		target_addr_t *physical_address)
 {
 	if (aice->port->api->read_tlb == NULL) {
 		LOG_WARNING("Not implemented: %s", __func__);

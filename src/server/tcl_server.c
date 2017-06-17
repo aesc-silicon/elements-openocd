@@ -13,9 +13,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -107,7 +105,7 @@ static int tcl_target_callback_trace_handler(struct target *target,
 	if (tclc->tc_trace) {
 		hex = malloc(hex_len);
 		buf = malloc(max_len);
-		hexify(hex, (const char *)data, len, hex_len);
+		hexify(hex, data, len, hex_len);
 		snprintf(buf, max_len, "%s%s%s", header, hex, trailer);
 		tcl_output(connection, buf, strlen(buf));
 		free(hex);

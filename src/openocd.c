@@ -19,9 +19,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -47,8 +45,13 @@
 #include <strings.h>
 #endif
 
+#ifdef PKGBLDDATE
 #define OPENOCD_VERSION	\
 	"Open On-Chip Debugger " VERSION RELSTR " (" PKGBLDDATE ")"
+#else
+#define OPENOCD_VERSION	\
+	"Open On-Chip Debugger " VERSION RELSTR
+#endif
 
 static const char openocd_startup_tcl[] = {
 #include "startup_tcl.inc"
@@ -294,8 +297,10 @@ static int openocd_thread(int argc, char *argv[], struct command_context *cmd_ct
 
 	if (init_at_startup) {
 		ret = command_run_line(cmd_ctx, "init");
-		if (ERROR_OK != ret)
+		if (ERROR_OK != ret) {
+			server_quit();
 			return ERROR_FAIL;
+		}
 	}
 
 	ret = server_loop(cmd_ctx);

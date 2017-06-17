@@ -22,7 +22,7 @@
 
 #define vexriscv_BREAK_INST 0x00100073
 
-static int vexriscv_read_memory(struct target *target, uint32_t address, uint32_t size, uint32_t count, uint8_t *buffer);
+static int vexriscv_read_memory(struct target *target, target_addr_t address, uint32_t size, uint32_t count, uint8_t *buffer);
 static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data);
 static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data);
 static void vexriscv_write32_no_execute(struct target *target, uint32_t address,uint32_t data);

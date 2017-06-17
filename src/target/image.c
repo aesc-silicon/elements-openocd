@@ -22,9 +22,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -731,7 +729,7 @@ int image_open(struct image *image, const char *url, const char *type_string)
 		retval = image_ihex_buffer_complete(image);
 		if (retval != ERROR_OK) {
 			LOG_ERROR(
-				"failed buffering IHEX image, check daemon output for additional information");
+				"failed buffering IHEX image, check server output for additional information");
 			fileio_close(image_ihex->fileio);
 			return retval;
 		}
@@ -782,7 +780,7 @@ int image_open(struct image *image, const char *url, const char *type_string)
 		retval = image_mot_buffer_complete(image);
 		if (retval != ERROR_OK) {
 			LOG_ERROR(
-				"failed buffering S19 image, check daemon output for additional information");
+				"failed buffering S19 image, check server output for additional information");
 			fileio_close(image_mot->fileio);
 			return retval;
 		}

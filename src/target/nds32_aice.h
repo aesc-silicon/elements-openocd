@@ -13,19 +13,18 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
-#ifndef __NDS32_AICE_H__
-#define __NDS32_AICE_H__
+
+#ifndef OPENOCD_TARGET_NDS32_AICE_H
+#define OPENOCD_TARGET_NDS32_AICE_H
 
 #include <jtag/aice/aice_port.h>
 
 int aice_read_reg_64(struct aice_port_s *aice, uint32_t num, uint64_t *val);
 int aice_write_reg_64(struct aice_port_s *aice, uint32_t num, uint64_t val);
-int aice_read_tlb(struct aice_port_s *aice, uint32_t virtual_address,
-		uint32_t *physical_address);
+int aice_read_tlb(struct aice_port_s *aice, target_addr_t virtual_address,
+		target_addr_t *physical_address);
 int aice_cache_ctl(struct aice_port_s *aice, uint32_t subtype, uint32_t address);
 int aice_set_retry_times(struct aice_port_s *aice, uint32_t a_retry_times);
 int aice_program_edm(struct aice_port_s *aice, char *command_sequence);
@@ -159,4 +158,4 @@ static inline int aice_set_data_endian(struct aice_port_s *aice,
 	return aice->port->api->set_data_endian(aice->coreid, target_data_endian);
 }
 
-#endif
+#endif /* OPENOCD_TARGET_NDS32_AICE_H */

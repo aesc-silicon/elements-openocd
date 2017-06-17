@@ -1046,7 +1046,7 @@ static void vexriscv_read_rsp_splited(struct target *target,uint32_t *data, uint
 		}
 	}
 }
-static int vexriscv_read_memory(struct target *target, uint32_t address,
+static int vexriscv_read_memory(struct target *target, target_addr_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
@@ -1080,7 +1080,7 @@ static int vexriscv_read_memory(struct target *target, uint32_t address,
 	return ERROR_OK;
 }
 
-static int vexriscv_write_memory(struct target *target, uint32_t address,
+static int vexriscv_write_memory(struct target *target, target_addr_t address,
 				uint32_t size, uint32_t count,
 				const uint8_t *buffer)
 {
@@ -1148,7 +1148,7 @@ static int vexriscv_add_breakpoint(struct target *target,
 	uint32_t data;
 
 	LOG_DEBUG("Adding breakpoint: addr 0x%08" PRIx32 ", len %d, type %d, set: %d, id: %" PRId32,
-		  breakpoint->address, breakpoint->length, breakpoint->type,
+		  (uint32_t)breakpoint->address, breakpoint->length, breakpoint->type,
 		  breakpoint->set, breakpoint->unique_id);
 
 	/* Only support SW breakpoints for now. */
@@ -1161,7 +1161,7 @@ static int vexriscv_add_breakpoint(struct target *target,
 					 &data);
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32,
-			   breakpoint->address);
+				(uint32_t)breakpoint->address);
 		return retval;
 	}
 
@@ -1178,7 +1178,7 @@ static int vexriscv_add_breakpoint(struct target *target,
 
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
-			   breakpoint->address);
+				(uint32_t)breakpoint->address);
 		return retval;
 	}
 
@@ -1191,7 +1191,7 @@ static int vexriscv_remove_breakpoint(struct target *target,
 				  struct breakpoint *breakpoint)
 {
 	LOG_DEBUG("Removing breakpoint: addr 0x%08" PRIx32 ", len %d, type %d, set: %d, id: %" PRId32,
-		  breakpoint->address, breakpoint->length, breakpoint->type,
+			(uint32_t)breakpoint->address, breakpoint->length, breakpoint->type,
 		  breakpoint->set, breakpoint->unique_id);
 
 	/* Only support SW breakpoints for now. */
@@ -1205,7 +1205,7 @@ static int vexriscv_remove_breakpoint(struct target *target,
 
 	if (retval != ERROR_OK) {
 		LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
-			   breakpoint->address);
+				(uint32_t)breakpoint->address);
 		return retval;
 	}
 
@@ -1255,7 +1255,7 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 		/* Single step past breakpoint at current address */
 		breakpoint = breakpoint_find(target, *((uint32_t*)vexriscv->regs->pc.value));
 		if (breakpoint) {
-			LOG_DEBUG("Unset breakpoint at 0x%08" PRIx32, breakpoint->address);
+			LOG_DEBUG("Unset breakpoint at 0x%08" PRIx32, (uint32_t) breakpoint->address);
 			retval = vexriscv_remove_breakpoint(target, breakpoint);
 			if (retval != ERROR_OK)
 				return retval;
@@ -1291,7 +1291,7 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 }
 
 static int vexriscv_resume(struct target *target, int current,
-		uint32_t address, int handle_breakpoints, int debug_execution)
+		target_addr_t address, int handle_breakpoints, int debug_execution)
 {
 	return vexriscv_resume_or_step(target, current, address,
 				   handle_breakpoints,
@@ -1300,7 +1300,7 @@ static int vexriscv_resume(struct target *target, int current,
 }
 
 static int vexriscv_step(struct target *target, int current,
-		     uint32_t address, int handle_breakpoints)
+		target_addr_t address, int handle_breakpoints)
 {
 	return vexriscv_resume_or_step(target, current, address,
 				   handle_breakpoints,

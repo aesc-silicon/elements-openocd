@@ -18,8 +18,7 @@
  * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  * Contact Information:
  * Intel Corporation
@@ -30,8 +29,8 @@
  * This is the interface to the x86 32 bit memory and breakpoint operations.
  */
 
-#ifndef X86_32_COMMON_H
-#define X86_32_COMMON_H
+#ifndef OPENOCD_TARGET_X86_32_COMMON_H
+#define OPENOCD_TARGET_X86_32_COMMON_H
 
 #include <jtag/jtag.h>
 #include <helper/command.h>
@@ -310,14 +309,14 @@ int x86_32_get_gdb_reg_list(struct target *t,
 int x86_32_common_init_arch_info(struct target *target,
 			struct x86_32_common *x86_32);
 int x86_32_common_mmu(struct target *t, int *enabled);
-int x86_32_common_virt2phys(struct target *t, uint32_t address, uint32_t *physical);
-int x86_32_common_read_phys_mem(struct target *t, uint32_t phys_address,
+int x86_32_common_virt2phys(struct target *t, target_addr_t address, target_addr_t *physical);
+int x86_32_common_read_phys_mem(struct target *t, target_addr_t phys_address,
 			uint32_t size, uint32_t count, uint8_t *buffer);
-int x86_32_common_write_phys_mem(struct target *t, uint32_t phys_address,
+int x86_32_common_write_phys_mem(struct target *t, target_addr_t phys_address,
 			uint32_t size, uint32_t count, const uint8_t *buffer);
-int x86_32_common_read_memory(struct target *t, uint32_t addr,
+int x86_32_common_read_memory(struct target *t, target_addr_t addr,
 			uint32_t size, uint32_t count, uint8_t *buf);
-int x86_32_common_write_memory(struct target *t, uint32_t addr,
+int x86_32_common_write_memory(struct target *t, target_addr_t addr,
 			uint32_t size, uint32_t count, const uint8_t *buf);
 int x86_32_common_read_io(struct target *t, uint32_t addr,
 			uint32_t size, uint8_t *buf);
@@ -328,4 +327,4 @@ int x86_32_common_remove_breakpoint(struct target *t, struct breakpoint *bp);
 int x86_32_common_add_watchpoint(struct target *t, struct watchpoint *wp);
 int x86_32_common_remove_watchpoint(struct target *t, struct watchpoint *wp);
 
-#endif /* X86_32_COMMON_H */
+#endif /* OPENOCD_TARGET_X86_32_COMMON_H */

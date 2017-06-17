@@ -19,9 +19,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -702,6 +700,11 @@ static int em357_probe(struct flash_bank *bank)
 		case 0x40000:
 			/* 256k -- 128 2k pages */
 			num_pages = 128;
+			page_size = 2048;
+			break;
+		case 0x80000:
+			/* 512k -- 256 2k pages */
+			num_pages = 256;
 			page_size = 2048;
 			break;
 		default:

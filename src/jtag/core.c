@@ -23,9 +23,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -1719,11 +1717,11 @@ void jtag_set_reset_config(enum reset_types type)
 
 int jtag_get_trst(void)
 {
-	return jtag_trst;
+	return jtag_trst == 1;
 }
 int jtag_get_srst(void)
 {
-	return jtag_srst;
+	return jtag_srst == 1;
 }
 
 void jtag_set_nsrst_delay(unsigned delay)

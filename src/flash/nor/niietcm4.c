@@ -13,8 +13,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.                                        *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -231,7 +230,8 @@ static int niietcm4_uopstatus_check(struct flash_bank *bank)
 static int niietcm4_dump_uflash_page(struct flash_bank *bank, uint32_t *dump, int page_num, int mem_type)
 {
 	struct target *target = bank->target;
-	int i, retval;
+	int i;
+	int retval = ERROR_OK;
 
 	uint32_t uflash_cmd;
 	if (mem_type == INFO_MEM_TYPE)
@@ -266,7 +266,8 @@ static int niietcm4_dump_uflash_page(struct flash_bank *bank, uint32_t *dump, in
 static int niietcm4_load_uflash_page(struct flash_bank *bank, uint32_t *dump, int page_num, int mem_type)
 {
 	struct target *target = bank->target;
-	int i, retval;
+	int i;
+	int retval = ERROR_OK;
 
 	uint32_t uflash_cmd;
 	if (mem_type == INFO_MEM_TYPE)
@@ -1719,7 +1720,7 @@ static int niietcm4_auto_probe(struct flash_bank *bank)
 static int get_niietcm4_info(struct flash_bank *bank, char *buf, int buf_size)
 {
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
-	LOG_INFO("\nNIIET Cortex M4F %s\n%s", niietcm4_info->chip_name, niietcm4_info->chip_brief);
+	LOG_INFO("\nNIIET Cortex-M4F %s\n%s", niietcm4_info->chip_name, niietcm4_info->chip_brief);
 	snprintf(buf, buf_size, " ");
 
 	return ERROR_OK;

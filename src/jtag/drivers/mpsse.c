@@ -13,9 +13,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -106,12 +104,13 @@ static bool string_descriptor_equal(libusb_device_handle *device, uint8_t str_in
 
 static bool device_location_equal(libusb_device *device, const char *location)
 {
+	bool result = false;
+#ifdef HAVE_LIBUSB_GET_PORT_NUMBERS
 	char *loc = strdup(location);
 	uint8_t port_path[7];
 	int path_step, path_len;
 	uint8_t dev_bus = libusb_get_bus_number(device);
 	char *ptr;
-	bool result = false;
 
 	path_len = libusb_get_port_numbers(device, port_path, 7);
 	if (path_len == LIBUSB_ERROR_OVERFLOW) {
@@ -154,6 +153,7 @@ static bool device_location_equal(libusb_device *device, const char *location)
 
  done:
 	free(loc);
+#endif
 	return result;
 }
 
@@ -247,8 +247,8 @@ static bool open_matching_device(struct mpsse_ctx *ctx, const uint16_t *vid, con
 	err = libusb_detach_kernel_driver(ctx->usb_dev, ctx->interface);
 	if (err != LIBUSB_SUCCESS && err != LIBUSB_ERROR_NOT_FOUND
 			&& err != LIBUSB_ERROR_NOT_SUPPORTED) {
-		LOG_ERROR("libusb_detach_kernel_driver() failed with %s", libusb_error_name(err));
-		goto error;
+		LOG_WARNING("libusb_detach_kernel_driver() failed with %s, trying to continue anyway",
+			libusb_error_name(err));
 	}
 
 	err = libusb_claim_interface(ctx->usb_dev, ctx->interface);
@@ -872,6 +872,8 @@ int mpsse_flush(struct mpsse_ctx *ctx)
 	libusb_fill_bulk_transfer(write_transfer, ctx->usb_dev, ctx->out_ep, ctx->write_buffer,
 		ctx->write_count, write_cb, &write_result, ctx->usb_write_timeout);
 	retval = libusb_submit_transfer(write_transfer);
+	if (retval != LIBUSB_SUCCESS)
+		goto error_check;
 
 	if (ctx->read_count) {
 		read_transfer = libusb_alloc_transfer(0);
@@ -879,22 +881,36 @@ int mpsse_flush(struct mpsse_ctx *ctx)
 			ctx->read_chunk_size, read_cb, &read_result,
 			ctx->usb_read_timeout);
 		retval = libusb_submit_transfer(read_transfer);
+		if (retval != LIBUSB_SUCCESS)
+			goto error_check;
 	}
 
 	/* Polling loop, more or less taken from libftdi */
 	while (!write_result.done || !read_result.done) {
-		retval = libusb_handle_events(ctx->usb_ctx);
+		struct timeval timeout_usb;
+
+		timeout_usb.tv_sec = 1;
+		timeout_usb.tv_usec = 0;
+
+		retval = libusb_handle_events_timeout_completed(ctx->usb_ctx, &timeout_usb, NULL);
 		keep_alive();
-		if (retval != LIBUSB_SUCCESS && retval != LIBUSB_ERROR_INTERRUPTED) {
+		if (retval == LIBUSB_ERROR_NO_DEVICE || retval == LIBUSB_ERROR_INTERRUPTED)
+			break;
+
+		if (retval != LIBUSB_SUCCESS) {
 			libusb_cancel_transfer(write_transfer);
 			if (read_transfer)
 				libusb_cancel_transfer(read_transfer);
-			while (!write_result.done || !read_result.done)
-				if (libusb_handle_events(ctx->usb_ctx) != LIBUSB_SUCCESS)
+			while (!write_result.done || !read_result.done) {
+				retval = libusb_handle_events_timeout_completed(ctx->usb_ctx,
+								&timeout_usb, NULL);
+				if (retval != LIBUSB_SUCCESS)
 					break;
+			}
 		}
 	}
 
+error_check:
 	if (retval != LIBUSB_SUCCESS) {
 		LOG_ERROR("libusb_handle_events() failed with %s", libusb_error_name(retval));
 		retval = ERROR_FAIL;

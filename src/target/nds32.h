@@ -13,13 +13,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef __NDS32_H__
-#define __NDS32_H__
+#ifndef OPENOCD_TARGET_NDS32_H
+#define OPENOCD_TARGET_NDS32_H
 
 #include <jtag/jtag.h>
 #include "target.h"
@@ -402,23 +400,23 @@ extern int nds32_get_mapped_reg(struct nds32 *nds32, unsigned regnum, uint32_t *
 extern int nds32_set_mapped_reg(struct nds32 *nds32, unsigned regnum, uint32_t value);
 
 extern int nds32_edm_config(struct nds32 *nds32);
-extern int nds32_cache_sync(struct target *target, uint32_t address, uint32_t length);
+extern int nds32_cache_sync(struct target *target, target_addr_t address, uint32_t length);
 extern int nds32_mmu(struct target *target, int *enabled);
-extern int nds32_virtual_to_physical(struct target *target, uint32_t address,
-		uint32_t *physical);
-extern int nds32_read_phys_memory(struct target *target, uint32_t address,
+extern int nds32_virtual_to_physical(struct target *target, target_addr_t address,
+		target_addr_t *physical);
+extern int nds32_read_phys_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, uint8_t *buffer);
-extern int nds32_write_phys_memory(struct target *target, uint32_t address,
+extern int nds32_write_phys_memory(struct target *target, target_addr_t address,
 		uint32_t size, uint32_t count, const uint8_t *buffer);
 extern uint32_t nds32_nextpc(struct nds32 *nds32, int current, uint32_t address);
 extern int nds32_examine_debug_reason(struct nds32 *nds32);
 extern int nds32_step(struct target *target, int current,
-		uint32_t address, int handle_breakpoints);
+		target_addr_t address, int handle_breakpoints);
 extern int nds32_target_state(struct nds32 *nds32, enum target_state *state);
 extern int nds32_halt(struct target *target);
 extern int nds32_poll(struct target *target);
 extern int nds32_resume(struct target *target, int current,
-		uint32_t address, int handle_breakpoints, int debug_execution);
+		target_addr_t address, int handle_breakpoints, int debug_execution);
 extern int nds32_assert_reset(struct target *target);
 extern int nds32_init(struct nds32 *nds32);
 extern int nds32_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fileio_info);
@@ -456,4 +454,4 @@ static inline bool nds32_reach_max_interrupt_level(struct nds32 *nds32)
 	return nds32->max_interrupt_level == nds32->current_interrupt_level;
 }
 
-#endif /* __NDS32_H__ */
+#endif /* OPENOCD_TARGET_NDS32_H */

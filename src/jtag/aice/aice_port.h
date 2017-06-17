@@ -13,12 +13,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
-#ifndef _AICE_PORT_H_
-#define _AICE_PORT_H_
+
+#ifndef OPENOCD_JTAG_AICE_AICE_PORT_H
+#define OPENOCD_JTAG_AICE_AICE_PORT_H
 
 #include <target/nds32_edm.h>
 
@@ -181,7 +180,7 @@ struct aice_port_api_s {
 	int (*memory_mode)(uint32_t coreid, enum nds_memory_select mem_select);
 
 	/** */
-	int (*read_tlb)(uint32_t coreid, uint32_t virtual_address, uint32_t *physical_address);
+	int (*read_tlb)(uint32_t coreid, target_addr_t virtual_address, target_addr_t *physical_address);
 
 	/** */
 	int (*cache_ctl)(uint32_t coreid, uint32_t subtype, uint32_t address);
@@ -235,4 +234,4 @@ struct aice_port {
 /** */
 const struct aice_port *aice_port_get_list(void);
 
-#endif
+#endif /* OPENOCD_JTAG_AICE_AICE_PORT_H */

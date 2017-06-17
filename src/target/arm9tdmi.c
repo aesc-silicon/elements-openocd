@@ -19,9 +19,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -32,6 +30,7 @@
 #include "target_type.h"
 #include "register.h"
 #include "arm_opcodes.h"
+#include "arm_semihosting.h"
 
 /*
  * NOTE:  this holds code that's used with multiple ARM9 processors:
@@ -716,6 +715,7 @@ int arm9tdmi_init_target(struct command_context *cmd_ctx,
 		struct target *target)
 {
 	arm9tdmi_build_reg_cache(target);
+	arm_semihosting_init(target);
 	return ERROR_OK;
 }
 

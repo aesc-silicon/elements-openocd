@@ -13,9 +13,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -35,9 +33,9 @@ static int avr_init_target(struct command_context *cmd_ctx, struct target *targe
 static int avr_arch_state(struct target *target);
 static int avr_poll(struct target *target);
 static int avr_halt(struct target *target);
-static int avr_resume(struct target *target, int current, uint32_t address,
+static int avr_resume(struct target *target, int current, target_addr_t address,
 		int handle_breakpoints, int debug_execution);
-static int avr_step(struct target *target, int current, uint32_t address,
+static int avr_step(struct target *target, int current, target_addr_t address,
 		int handle_breakpoints);
 
 static int avr_assert_reset(struct target *target);
@@ -118,14 +116,14 @@ static int avr_halt(struct target *target)
 	return ERROR_OK;
 }
 
-static int avr_resume(struct target *target, int current, uint32_t address,
+static int avr_resume(struct target *target, int current, target_addr_t address,
 		int handle_breakpoints, int debug_execution)
 {
 	LOG_DEBUG("%s", __func__);
 	return ERROR_OK;
 }
 
-static int avr_step(struct target *target, int current, uint32_t address, int handle_breakpoints)
+static int avr_step(struct target *target, int current, target_addr_t address, int handle_breakpoints)
 {
 	LOG_DEBUG("%s", __func__);
 	return ERROR_OK;

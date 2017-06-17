@@ -13,9 +13,7 @@
 *   GNU General Public License for more details.                          *
 *                                                                         *
 *   You should have received a copy of the GNU General Public License     *
-*   along with this program; if not, write to the                         *
-*   Free Software Foundation, Inc.,                                       *
-*   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+*   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
 ***************************************************************************/
 
 /**
@@ -107,8 +105,10 @@ static struct mpsse_ctx *mpsse_ctx;
 struct signal {
 	const char *name;
 	uint16_t data_mask;
+	uint16_t input_mask;
 	uint16_t oe_mask;
 	bool invert_data;
+	bool invert_input;
 	bool invert_oe;
 	struct signal *next;
 };
@@ -213,6 +213,32 @@ static int ftdi_set_signal(const struct signal *s, char value)
 	return ERROR_OK;
 }
 
+static int ftdi_get_signal(const struct signal *s, uint16_t * value_out)
+{
+	uint8_t data_low = 0;
+	uint8_t data_high = 0;
+
+	if (s->input_mask == 0) {
+		LOG_ERROR("interface doesn't provide signal '%s'", s->name);
+		return ERROR_FAIL;
+	}
+
+	if (s->input_mask & 0xff)
+		mpsse_read_data_bits_low_byte(mpsse_ctx, &data_low);
+	if (s->input_mask >> 8)
+		mpsse_read_data_bits_high_byte(mpsse_ctx, &data_high);
+
+	mpsse_flush(mpsse_ctx);
+
+	*value_out = (((uint16_t)data_high) << 8) | data_low;
+
+	if (s->invert_input)
+		*value_out = ~(*value_out);
+
+	*value_out &= s->input_mask;
+
+	return ERROR_OK;
+}
 
 /**
  * Function move_to_state
@@ -699,6 +725,7 @@ COMMAND_HANDLER(ftdi_handle_serial_command)
 	return ERROR_OK;
 }
 
+#ifdef HAVE_LIBUSB_GET_PORT_NUMBERS
 COMMAND_HANDLER(ftdi_handle_location_command)
 {
 	if (CMD_ARGC == 1) {
@@ -711,6 +738,7 @@ COMMAND_HANDLER(ftdi_handle_location_command)
 
 	return ERROR_OK;
 }
+#endif
 
 COMMAND_HANDLER(ftdi_handle_channel_command)
 {
@@ -740,6 +768,8 @@ COMMAND_HANDLER(ftdi_handle_layout_signal_command)
 
 	bool invert_data = false;
 	uint16_t data_mask = 0;
+	bool invert_input = false;
+	uint16_t input_mask = 0;
 	bool invert_oe = false;
 	uint16_t oe_mask = 0;
 	for (unsigned i = 1; i < CMD_ARGC; i += 2) {
@@ -749,6 +779,12 @@ COMMAND_HANDLER(ftdi_handle_layout_signal_command)
 		} else if (strcmp("-ndata", CMD_ARGV[i]) == 0) {
 			invert_data = true;
 			COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i + 1], data_mask);
+		} else if (strcmp("-input", CMD_ARGV[i]) == 0) {
+			invert_input = false;
+			COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i + 1], input_mask);
+		} else if (strcmp("-ninput", CMD_ARGV[i]) == 0) {
+			invert_input = true;
+			COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i + 1], input_mask);
 		} else if (strcmp("-oe", CMD_ARGV[i]) == 0) {
 			invert_oe = false;
 			COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i + 1], oe_mask);
@@ -757,15 +793,19 @@ COMMAND_HANDLER(ftdi_handle_layout_signal_command)
 			COMMAND_PARSE_NUMBER(u16, CMD_ARGV[i + 1], oe_mask);
 		} else if (!strcmp("-alias", CMD_ARGV[i]) ||
 			   !strcmp("-nalias", CMD_ARGV[i])) {
-			if (!strcmp("-nalias", CMD_ARGV[i]))
+			if (!strcmp("-nalias", CMD_ARGV[i])) {
 				invert_data = true;
+				invert_input = true;
+			}
 			struct signal *sig = find_signal_by_name(CMD_ARGV[i + 1]);
 			if (!sig) {
 				LOG_ERROR("signal %s is not defined", CMD_ARGV[i + 1]);
 				return ERROR_FAIL;
 			}
 			data_mask = sig->data_mask;
+			input_mask = sig->input_mask;
 			oe_mask = sig->oe_mask;
+			invert_input ^= sig->invert_input;
 			invert_oe = sig->invert_oe;
 			invert_data ^= sig->invert_data;
 		} else {
@@ -785,6 +825,8 @@ COMMAND_HANDLER(ftdi_handle_layout_signal_command)
 
 	sig->invert_data = invert_data;
 	sig->data_mask = data_mask;
+	sig->invert_input = invert_input;
+	sig->input_mask = input_mask;
 	sig->invert_oe = invert_oe;
 	sig->oe_mask = oe_mask;
 
@@ -819,6 +861,28 @@ COMMAND_HANDLER(ftdi_handle_set_signal_command)
 	}
 
 	return mpsse_flush(mpsse_ctx);
+}
+
+COMMAND_HANDLER(ftdi_handle_get_signal_command)
+{
+	if (CMD_ARGC < 1)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	struct signal *sig;
+	uint16_t sig_data = 0;
+	sig = find_signal_by_name(CMD_ARGV[0]);
+	if (!sig) {
+		LOG_ERROR("interface configuration doesn't define signal '%s'", CMD_ARGV[0]);
+		return ERROR_FAIL;
+	}
+
+	int ret = ftdi_get_signal(sig, &sig_data);
+	if (ret != ERROR_OK)
+		return ret;
+
+	LOG_USER("Signal %s = %#06x", sig->name, sig_data);
+
+	return ERROR_OK;
 }
 
 COMMAND_HANDLER(ftdi_handle_vid_pid_command)
@@ -889,6 +953,7 @@ static const struct command_registration ftdi_command_handlers[] = {
 		.help = "set the serial number of the FTDI device",
 		.usage = "serial_string",
 	},
+#ifdef HAVE_LIBUSB_GET_PORT_NUMBERS
 	{
 		.name = "ftdi_location",
 		.handler = &ftdi_handle_location_command,
@@ -896,6 +961,7 @@ static const struct command_registration ftdi_command_handlers[] = {
 		.help = "set the USB bus location of the FTDI device",
 		.usage = "<bus>:port[,port]...",
 	},
+#endif
 	{
 		.name = "ftdi_channel",
 		.handler = &ftdi_handle_channel_command,
@@ -925,6 +991,13 @@ static const struct command_registration ftdi_command_handlers[] = {
 		.mode = COMMAND_EXEC,
 		.help = "control a layout-specific signal",
 		.usage = "name (1|0|z)",
+	},
+	{
+		.name = "ftdi_get_signal",
+		.handler = &ftdi_handle_get_signal_command,
+		.mode = COMMAND_EXEC,
+		.help = "read the value of a layout-specific signal",
+		.usage = "name",
 	},
 	{
 		.name = "ftdi_vid_pid",

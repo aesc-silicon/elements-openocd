@@ -19,9 +19,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -489,7 +487,7 @@ uint32_t arm946e_invalidate_icache(struct target *target, uint32_t address,
 }
 
 /** Writes a buffer, in the specified word size, with current MMU settings. */
-int arm946e_write_memory(struct target *target, uint32_t address,
+int arm946e_write_memory(struct target *target, target_addr_t address,
 	uint32_t size, uint32_t count, const uint8_t *buffer)
 {
 	int retval;
@@ -537,7 +535,7 @@ int arm946e_write_memory(struct target *target, uint32_t address,
 
 }
 
-int arm946e_read_memory(struct target *target, uint32_t address,
+int arm946e_read_memory(struct target *target, target_addr_t address,
 	uint32_t size, uint32_t count, uint8_t *buffer)
 {
 	int retval;

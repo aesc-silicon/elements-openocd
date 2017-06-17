@@ -14,9 +14,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -189,7 +187,7 @@ int jtag_libusb_set_configuration(jtag_libusb_device_handle *devh,
 int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 		unsigned int *usb_read_ep,
 		unsigned int *usb_write_ep,
-		int bclass, int subclass, int protocol)
+		int bclass, int subclass, int protocol, int trans_type)
 {
 	struct jtag_libusb_device *udev = jtag_libusb_get_device(devh);
 	const struct libusb_interface *inter;
@@ -212,6 +210,8 @@ int jtag_libusb_choose_interface(struct jtag_libusb_device_handle *devh,
 				continue;
 
 			epdesc = &interdesc->endpoint[k];
+			if (trans_type > 0 && (epdesc->bmAttributes & 0x3) != trans_type)
+				continue;
 
 			uint8_t epnum = epdesc->bEndpointAddress;
 			bool is_input = epnum & 0x80;

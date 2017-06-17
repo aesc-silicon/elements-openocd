@@ -19,9 +19,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -44,7 +42,7 @@
 
 
 static int arm11_step(struct target *target, int current,
-		uint32_t address, int handle_breakpoints);
+		target_addr_t address, int handle_breakpoints);
 
 
 /** Check and if necessary take control of the system
@@ -392,7 +390,7 @@ static int arm11_halt(struct target *target)
 			break;
 
 
-		long long then = 0;
+		int64_t then = 0;
 		if (i == 1000)
 			then = timeval_ms();
 		if (i >= 1000) {
@@ -420,16 +418,38 @@ static uint32_t arm11_nextpc(struct arm11_common *arm11, int current, uint32_t a
 {
 	void *value = arm11->arm.pc->value;
 
-	if (!current)
-		buf_set_u32(value, 0, 32, address);
-	else
+	/* use the current program counter */
+	if (current)
 		address = buf_get_u32(value, 0, 32);
+
+	/* Make sure that the gdb thumb fixup does not
+	 * kill the return address
+	 */
+	switch (arm11->arm.core_state) {
+		case ARM_STATE_ARM:
+			address &= 0xFFFFFFFC;
+			break;
+		case ARM_STATE_THUMB:
+			/* When the return address is loaded into PC
+			 * bit 0 must be 1 to stay in Thumb state
+			 */
+			address |= 0x1;
+			break;
+
+		/* catch-all for JAZELLE and THUMB_EE */
+		default:
+			break;
+	}
+
+	buf_set_u32(value, 0, 32, address);
+	arm11->arm.pc->dirty = 1;
+	arm11->arm.pc->valid = 1;
 
 	return address;
 }
 
 static int arm11_resume(struct target *target, int current,
-	uint32_t address, int handle_breakpoints, int debug_execution)
+	target_addr_t address, int handle_breakpoints, int debug_execution)
 {
 	/*	  LOG_DEBUG("current %d  address %08x  handle_breakpoints %d  debug_execution %d", */
 	/*	current, address, handle_breakpoints, debug_execution); */
@@ -447,7 +467,7 @@ static int arm11_resume(struct target *target, int current,
 
 	address = arm11_nextpc(arm11, current, address);
 
-	LOG_DEBUG("RESUME PC %08" PRIx32 "%s", address, !current ? "!" : "");
+	LOG_DEBUG("RESUME PC %08" TARGET_PRIxADDR "%s", address, !current ? "!" : "");
 
 	/* clear breakpoints/watchpoints and VCR*/
 	CHECK_RETVAL(arm11_sc7_clear_vbw(arm11));
@@ -461,7 +481,7 @@ static int arm11_resume(struct target *target, int current,
 
 		for (bp = target->breakpoints; bp; bp = bp->next) {
 			if (bp->address == address) {
-				LOG_DEBUG("must step over %08" PRIx32 "", bp->address);
+				LOG_DEBUG("must step over %08" TARGET_PRIxADDR "", bp->address);
 				arm11_step(target, 1, 0, 0);
 				break;
 			}
@@ -487,7 +507,7 @@ static int arm11_resume(struct target *target, int current,
 
 			CHECK_RETVAL(arm11_sc7_run(arm11, brp, ARRAY_SIZE(brp)));
 
-			LOG_DEBUG("Add BP %d at %08" PRIx32, brp_num,
+			LOG_DEBUG("Add BP %d at %08" TARGET_PRIxADDR, brp_num,
 				bp->address);
 
 			brp_num++;
@@ -514,7 +534,7 @@ static int arm11_resume(struct target *target, int current,
 			break;
 
 
-		long long then = 0;
+		int64_t then = 0;
 		if (i == 1000)
 			then = timeval_ms();
 		if (i >= 1000) {
@@ -537,7 +557,7 @@ static int arm11_resume(struct target *target, int current,
 }
 
 static int arm11_step(struct target *target, int current,
-	uint32_t address, int handle_breakpoints)
+	target_addr_t address, int handle_breakpoints)
 {
 	LOG_DEBUG("target->state: %s",
 		target_state_name(target));
@@ -551,7 +571,7 @@ static int arm11_step(struct target *target, int current,
 
 	address = arm11_nextpc(arm11, current, address);
 
-	LOG_DEBUG("STEP PC %08" PRIx32 "%s", address, !current ? "!" : "");
+	LOG_DEBUG("STEP PC %08" TARGET_PRIxADDR "%s", address, !current ? "!" : "");
 
 
 	/** \todo TODO: Thumb not supported here */
@@ -563,13 +583,13 @@ static int arm11_step(struct target *target, int current,
 	/* skip over BKPT */
 	if ((next_instruction & 0xFFF00070) == 0xe1200070) {
 		address = arm11_nextpc(arm11, 0, address + 4);
-		LOG_DEBUG("Skipping BKPT %08" PRIx32, address);
+		LOG_DEBUG("Skipping BKPT %08" TARGET_PRIxADDR, address);
 	}
 	/* skip over Wait for interrupt / Standby
 	 * mcr	15, 0, r?, cr7, cr0, {4} */
 	else if ((next_instruction & 0xFFFF0FFF) == 0xee070f90) {
 		address = arm11_nextpc(arm11, 0, address + 4);
-		LOG_DEBUG("Skipping WFI %08" PRIx32, address);
+		LOG_DEBUG("Skipping WFI %08" TARGET_PRIxADDR, address);
 	}
 	/* ignore B to self */
 	else if ((next_instruction & 0xFEFFFFFF) == 0xeafffffe)
@@ -694,21 +714,32 @@ static int arm11_assert_reset(struct target *target)
 {
 	struct arm11_common *arm11 = target_to_arm11(target);
 
-	/* optionally catch reset vector */
-	if (target->reset_halt && !(arm11->vcr & 1))
-		CHECK_RETVAL(arm11_sc7_set_vcr(arm11, arm11->vcr | 1));
-
-	/* Issue some kind of warm reset. */
-	if (target_has_event_action(target, TARGET_EVENT_RESET_ASSERT))
-		target_handle_event(target, TARGET_EVENT_RESET_ASSERT);
-	else if (jtag_get_reset_config() & RESET_HAS_SRST) {
-		/* REVISIT handle "pulls" cases, if there's
-		 * hardware that needs them to work.
-		 */
-		jtag_add_reset(0, 1);
+	if (!(target_was_examined(target))) {
+		if (jtag_get_reset_config() & RESET_HAS_SRST)
+			jtag_add_reset(0, 1);
+		else {
+			LOG_WARNING("Reset is not asserted because the target is not examined.");
+			LOG_WARNING("Use a reset button or power cycle the target.");
+			return ERROR_TARGET_NOT_EXAMINED;
+		}
 	} else {
-		LOG_ERROR("%s: how to reset?", target_name(target));
-		return ERROR_FAIL;
+
+		/* optionally catch reset vector */
+		if (target->reset_halt && !(arm11->vcr & 1))
+			CHECK_RETVAL(arm11_sc7_set_vcr(arm11, arm11->vcr | 1));
+
+		/* Issue some kind of warm reset. */
+		if (target_has_event_action(target, TARGET_EVENT_RESET_ASSERT))
+			target_handle_event(target, TARGET_EVENT_RESET_ASSERT);
+		else if (jtag_get_reset_config() & RESET_HAS_SRST) {
+			/* REVISIT handle "pulls" cases, if there's
+			 * hardware that needs them to work.
+			 */
+			jtag_add_reset(0, 1);
+		} else {
+			LOG_ERROR("%s: how to reset?", target_name(target));
+			return ERROR_FAIL;
+		}
 	}
 
 	/* registers are now invalid */
@@ -856,7 +887,7 @@ static int arm11_read_memory_inner(struct target *target,
 }
 
 static int arm11_read_memory(struct target *target,
-	uint32_t address,
+	target_addr_t address,
 	uint32_t size,
 	uint32_t count,
 	uint8_t *buffer)
@@ -1012,7 +1043,7 @@ static int arm11_write_memory_inner(struct target *target,
 }
 
 static int arm11_write_memory(struct target *target,
-	uint32_t address, uint32_t size,
+	target_addr_t address, uint32_t size,
 	uint32_t count, const uint8_t *buffer)
 {
 	/* pointer increment matters only for multi-unit writes ...

@@ -13,13 +13,11 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   You should have received a copy of the GNU General Public License     *
- *   along with this program; if not, write to the                         *
- *   Free Software Foundation, Inc.,                                       *
- *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-#ifndef ARM920T_H
-#define ARM920T_H
+#ifndef OPENOCD_TARGET_ARM920T_H
+#define OPENOCD_TARGET_ARM920T_H
 
 #include "arm9tdmi.h"
 #include "armv4_5_mmu.h"
@@ -57,9 +55,9 @@ struct arm920t_tlb_entry {
 int arm920t_arch_state(struct target *target);
 int arm920t_soft_reset_halt(struct target *target);
 int arm920t_read_memory(struct target *target,
-	uint32_t address, uint32_t size, uint32_t count, uint8_t *buffer);
+	target_addr_t address, uint32_t size, uint32_t count, uint8_t *buffer);
 int arm920t_write_memory(struct target *target,
-	uint32_t address, uint32_t size, uint32_t count, const uint8_t *buffer);
+	target_addr_t address, uint32_t size, uint32_t count, const uint8_t *buffer);
 int arm920t_post_debug_entry(struct target *target);
 void arm920t_pre_restore_context(struct target *target);
 int arm920t_get_ttb(struct target *target, uint32_t *result);
@@ -70,4 +68,4 @@ int arm920t_enable_mmu_caches(struct target *target,
 
 extern const struct command_registration arm920t_command_handlers[];
 
-#endif /* ARM920T_H */
+#endif /* OPENOCD_TARGET_ARM920T_H */

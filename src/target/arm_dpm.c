@@ -12,9 +12,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the
- * Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -23,6 +21,7 @@
 
 #include "arm.h"
 #include "arm_dpm.h"
+#include "armv8_dpm.h"
 #include <jtag/jtag.h>
 #include "register.h"
 #include "breakpoints.h"
@@ -167,6 +166,9 @@ static int dpm_read_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 					/* core-specific ... ? */
 					LOG_WARNING("Jazelle PC adjustment unknown");
 					break;
+				default:
+					LOG_WARNING("unknow core state");
+					break;
 			}
 			break;
 		default:
@@ -228,6 +230,18 @@ static int dpm_write_reg(struct arm_dpm *dpm, struct reg *r, unsigned regnum)
 	}
 
 	return retval;
+}
+
+/**
+ * Write to program counter and switch the core state (arm/thumb) according to
+ * the address.
+ */
+static int dpm_write_pc_core_state(struct arm_dpm *dpm, struct reg *r)
+{
+	uint32_t value = buf_get_u32(r->value, 0, 32);
+
+	/* read r0 from DCC; then "BX r0" */
+	return dpm->instr_write_data_r0(dpm, ARMV4_5_BX(0), value);
 }
 
 /**
@@ -423,20 +437,20 @@ int arm_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 
 				/* cope with special cases */
 				switch (regnum) {
-					case 8 ... 12:
-						/* r8..r12 "anything but FIQ" case;
-						 * we "know" core mode is accurate
-						 * since we haven't changed it yet
-						 */
-						if (arm->core_mode == ARM_MODE_FIQ
-							&& ARM_MODE_ANY
-							!= mode)
-							tmode = ARM_MODE_USR;
-						break;
-					case 16:
-						/* SPSR */
-						regnum++;
-						break;
+				case 8 ... 12:
+					/* r8..r12 "anything but FIQ" case;
+					 * we "know" core mode is accurate
+					 * since we haven't changed it yet
+					 */
+					if (arm->core_mode == ARM_MODE_FIQ
+					    && ARM_MODE_ANY
+					    != mode)
+						tmode = ARM_MODE_USR;
+					break;
+				case 16:
+					/* SPSR */
+					regnum++;
+					break;
 				}
 
 				/* REVISIT error checks */
@@ -450,8 +464,8 @@ int arm_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 				continue;
 
 			retval = dpm_write_reg(dpm,
-					&cache->reg_list[i],
-					regnum);
+					       &cache->reg_list[i],
+					       regnum);
 			if (retval != ERROR_OK)
 				goto done;
 		}
@@ -467,6 +481,19 @@ int arm_dpm_write_dirty_registers(struct arm_dpm *dpm, bool bpwp)
 		goto done;
 	arm->cpsr->dirty = false;
 
+	/* restore the PC, make sure to also switch the core state
+	 * to whatever it was set to with "arm core_state" command.
+	 * target code will have set PC to an appropriate resume address.
+	 */
+	retval = dpm_write_pc_core_state(dpm, arm->pc);
+	if (retval != ERROR_OK)
+		goto done;
+	/* on Cortex-A5 (as found on NXP VF610 SoC), BX instruction
+	 * executed in debug state doesn't appear to set the PC,
+	 * explicitly set it with a "MOV pc, r0". This doesn't influence
+	 * CPSR on Cortex-A9 so it should be OK. Maybe due to different
+	 * debug version?
+	 */
 	retval = dpm_write_reg(dpm, arm->pc, 15);
 	if (retval != ERROR_OK)
 		goto done;
@@ -882,6 +909,7 @@ void arm_dpm_report_wfar(struct arm_dpm *dpm, uint32_t addr)
 			addr -= 4;
 			break;
 		case ARM_STATE_JAZELLE:
+		case ARM_STATE_AARCH64:
 			/* ?? */
 			break;
 	}
@@ -902,20 +930,16 @@ void arm_dpm_report_dscr(struct arm_dpm *dpm, uint32_t dscr)
 
 	/* Examine debug reason */
 	switch (DSCR_ENTRY(dscr)) {
-		case 6:	/* Data abort (v6 only) */
-		case 7:	/* Prefetch abort (v6 only) */
-		/* FALL THROUGH -- assume a v6 core in abort mode */
-		case 0:	/* HALT request from debugger */
-		case 4:	/* EDBGRQ */
+		case DSCR_ENTRY_HALT_REQ:	/* HALT request from debugger */
+		case DSCR_ENTRY_EXT_DBG_REQ:	/* EDBGRQ */
 			target->debug_reason = DBG_REASON_DBGRQ;
 			break;
-		case 1:	/* HW breakpoint */
-		case 3:	/* SW BKPT */
-		case 5:	/* vector catch */
+		case DSCR_ENTRY_BREAKPOINT:	/* HW breakpoint */
+		case DSCR_ENTRY_BKPT_INSTR:	/* vector catch */
 			target->debug_reason = DBG_REASON_BREAKPOINT;
 			break;
-		case 2:	/* asynch watchpoint */
-		case 10:/* precise watchpoint */
+		case DSCR_ENTRY_IMPRECISE_WATCHPT:	/* asynch watchpoint */
+		case DSCR_ENTRY_PRECISE_WATCHPT:/* precise watchpoint */
 			target->debug_reason = DBG_REASON_WATCHPOINT;
 			break;
 		default:
@@ -940,7 +964,7 @@ int arm_dpm_setup(struct arm_dpm *dpm)
 {
 	struct arm *arm = dpm->arm;
 	struct target *target = arm->target;
-	struct reg_cache *cache;
+	struct reg_cache *cache = 0;
 
 	arm->dpm = dpm;
 
@@ -949,11 +973,13 @@ int arm_dpm_setup(struct arm_dpm *dpm)
 	arm->read_core_reg = arm_dpm_read_core_reg;
 	arm->write_core_reg = arm_dpm_write_core_reg;
 
-	cache = arm_build_reg_cache(target, arm);
-	if (!cache)
-		return ERROR_FAIL;
+	if (arm->core_cache == NULL) {
+		cache = arm_build_reg_cache(target, arm);
+		if (!cache)
+			return ERROR_FAIL;
 
-	*register_get_last_cache_p(&target->reg_cache) = cache;
+		*register_get_last_cache_p(&target->reg_cache) = cache;
+	}
 
 	/* coprocessor access setup */
 	arm->mrc = dpm_mrc;
@@ -972,9 +998,8 @@ int arm_dpm_setup(struct arm_dpm *dpm)
 	/* FIXME add vector catch support */
 
 	dpm->nbp = 1 + ((dpm->didr >> 24) & 0xf);
-	dpm->dbp = calloc(dpm->nbp, sizeof *dpm->dbp);
-
 	dpm->nwp = 1 + ((dpm->didr >> 28) & 0xf);
+	dpm->dbp = calloc(dpm->nbp, sizeof *dpm->dbp);
 	dpm->dwp = calloc(dpm->nwp, sizeof *dpm->dwp);
 
 	if (!dpm->dbp || !dpm->dwp) {
