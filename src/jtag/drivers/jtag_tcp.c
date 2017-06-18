@@ -71,7 +71,6 @@ static int jtag_tcp_init(void)
 {
 	jtag_tcp_state = TAP_RESET;
 
-
 	//---- Create the socket. The three arguments are: ----//
 	// 1) Internet domain 2) Stream socket 3) Default protocol (TCP in this case) //
 	clientSocket = socket(PF_INET, SOCK_STREAM, 0);
@@ -83,6 +82,17 @@ static int jtag_tcp_init(void)
 				 (char *) &flag,  /* the cast is historical
 										 cruft */
 				 sizeof(int));    /* length of option value */
+
+
+	/*int a = 0xFFFFFF;
+	if (setsockopt(clientSocket, SOL_SOCKET, SO_RCVBUF, &a, sizeof(int)) == -1) {
+	    fprintf(stderr, "Error setting socket opts: %s\n", strerror(errno));
+	}
+	a = 0xFFF;
+	if (setsockopt(clientSocket, SOL_SOCKET, SO_SNDBUF, &a, sizeof(int)) == -1) {
+	    fprintf(stderr, "Error setting socket opts: %s\n", strerror(errno));
+	}*/
+
 
 	//---- Configure settings of the server address struct ----//
 	struct sockaddr_in serverAddr;
@@ -298,6 +308,12 @@ int jtag_tcp_execute_queue(void)
 		}
 	}
 
+	{
+		uint8_t txBuffer = TDO_READ;
+		if(send(clientSocket,&txBuffer,1, 0) <= 0)
+			return ERROR_FAIL;
+	}
+
 	for (cmd = jtag_command_queue; retval == ERROR_OK && cmd != NULL;
 	     cmd = cmd->next) {
 		switch (cmd->type) {
@@ -317,7 +333,14 @@ int jtag_tcp_execute_queue(void)
 			break;
 		}
 	}
+	if(retval != 0)
+		LOG_ERROR("jtag_tcp queue error\n");
 
+	{
+		uint8_t rxBuffer;
+		if(read(clientSocket,&rxBuffer,1) != 1)
+			return ERROR_FAIL;
+	}
 	return retval;
 }
 
