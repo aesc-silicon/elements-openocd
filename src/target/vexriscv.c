@@ -387,7 +387,6 @@ static int vexriscv_get_core_reg(struct reg *reg)
 		reg->dirty = false;
 	}
 
-
 	return ERROR_OK;
 }
 
@@ -724,6 +723,7 @@ static int vexriscv_save_context(struct target *target)
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
 	}*/
+
 	uint8_t flagsBuffer[32];
 	for(uint32_t regId = 0;regId < 32;regId++){
 		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
@@ -739,7 +739,6 @@ static int vexriscv_save_context(struct target *target)
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
 	}
-
 	if((error = vexriscv_flush_caches(target)) != ERROR_OK) //Flush instruction cache
 		return error;
 
@@ -1038,7 +1037,7 @@ static void vexriscv_read_rsp_splited(struct target *target,uint32_t *data, uint
 		vexriscv_set_instr(tap, 0x03);
 		jtag_add_dr_scan(tap, 2, feilds, TAP_IDLE);
 	} else {
-		if(recv(vexriscv->clientSocket, &data, 4, 0) != 4){
+		if(recv(vexriscv->clientSocket, data, 4, 0) != 4){
 			LOG_ERROR("???");
 			*flags = 0;
 		}else {
