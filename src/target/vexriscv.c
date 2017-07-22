@@ -338,13 +338,20 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 }
 
 int vexriscv_write_regfile(struct target* target, bool execute,uint32_t regId,uint32_t value){
-	uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
-	if(low & 0x800){
-		high += 0x1000;
+	if(value & 0xFFFFF800){ //Require LUI
+		uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
+		if(low & 0x800){
+			high += 0x1000;
+		}
+		if(low){ //require ADDI
+			vexriscv_pushInstruction(target, false , 0x37 | (regId << 7) | high); //LUI regId, high
+			return vexriscv_pushInstruction(target, execute , 0x13 | (regId << 7) | (regId << 15) | (low << 20));//ADDI regId, regId, low
+		} else {
+			return vexriscv_pushInstruction(target, execute , 0x37 | (regId << 7) | high); //LUI regId, high
+		}
+	}else {
+		return vexriscv_pushInstruction(target,execute , 0x13 | (regId << 7) | (6 << 12) | (value << 20)); //ORI regId, x0, value
 	}
-
-	vexriscv_pushInstruction(target, false , 0x37 | (regId << 7) | high); //LUI regId, high
-	return vexriscv_pushInstruction(target,execute , 0x13 | (regId << 7) | (regId << 15) | (low << 20));//ADDI regId, x1, low
 }
 
 
@@ -363,7 +370,7 @@ static int vexriscv_get_core_reg(struct reg *reg)
 			return ERROR_FAIL;
 		}else if(reg->number == 32){
 			vexriscv_pushInstruction(target, false, 0x17); //AUIPC x0,0
-			vexriscv_readDataRegister(target, true, (uint32_t*)reg->value);
+			vexriscv_readInstructionResult(target, true, (uint32_t*)reg->value);
 		}else{
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
 		}
@@ -688,7 +695,7 @@ static int vexriscv_save_context(struct target *target)
 	//get PC in case of breakpoint before losing the value
 	if(flags & vexriscv_FLAGS_HALTED_BY_BREAK){
 		struct reg* reg = &vexriscv->regs->pc;
-		vexriscv_readDataRegister(target, false, (uint32_t*)reg->value);
+		vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
 		reg->valid = 1;
 		reg->dirty = 1;
 	}
@@ -696,7 +703,7 @@ static int vexriscv_save_context(struct target *target)
 	for(uint32_t regId = 0;regId < 32;regId++){
 		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
 		vexriscv_pushInstruction(target, false, 0x13 | (reg->number << 15)); //ADDI x0, x?, 0
-		vexriscv_readDataRegister(target, false, (uint32_t*)reg->value);
+		vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
 	}
@@ -968,8 +975,9 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value)
 	} else {
 		uint32_t buffer;
 		if(recv(vexriscv->clientSocket, &buffer, 4, 0) == 4){
-			value[0] = 1;
-			bit_copy(value,2,(uint8_t *) &buffer,0,32);
+			//value[0] = 1;
+			//bit_copy(value,2,(uint8_t *) &buffer,0,32);
+			bit_copy(value,0,(uint8_t *) &buffer,0,32);
 		} else{
 			LOG_ERROR("???");
 			value[0] = 0;
@@ -999,16 +1007,16 @@ static int vexriscv_read_memory(struct target *target, target_addr_t address,
 		switch(size){
 		case 4:
 			vexriscv_pushInstruction(target, false, (1 << 15) | (0x2 << 12) | 0x3); //LW x0, 0(x1)
-			vexriscv_readDataRegister(target, false, (uint32_t*)buffer);
+			vexriscv_readInstructionResult(target, false, (uint32_t*)buffer);
 			break;
 		case 2:
 			vexriscv_pushInstruction(target, false, (1 << 15) | (0x5 << 12) | 0x3); //LHU x0, 0(x1)
-			vexriscv_readDataRegister(target, false, &wordBuffer);
+			vexriscv_readInstructionResult(target, false, &wordBuffer);
 			*((uint16_t*)buffer) = wordBuffer;
 			break;
 		case 1:
 			vexriscv_pushInstruction(target, false, (1 << 15) | (0x4 << 12) | 0x3); //LBU x0, 0(x1)
-			vexriscv_readDataRegister(target, false, &wordBuffer);
+			vexriscv_readInstructionResult(target, false, &wordBuffer);
 			*((uint8_t*)buffer) = wordBuffer;
 			break;
 		}
@@ -1017,6 +1025,19 @@ static int vexriscv_read_memory(struct target *target, target_addr_t address,
 	}
 
 	return jtag_execute_queue();
+}
+
+
+struct vexriscv_mem_access{
+	uint32_t address;
+	uint32_t data;
+};
+
+int vexriscv_mem_access_comp (const void * elem1, const void * elem2)
+{
+	uint32_t f = ((struct vexriscv_mem_access*)elem1)->data;
+	uint32_t s = ((struct vexriscv_mem_access*)elem2)->data;
+    return (f > s) - (f < s);
 }
 
 static int vexriscv_write_memory(struct target *target, target_addr_t address,
@@ -1028,50 +1049,100 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 	//	  "; size %" PRId32 "; count %" PRId32, (uint32_t)address, size, count);
 
 	assert(target->state == TARGET_HALTED);
-	/*int maxAddressReg = 4;
-	int numAddressReg = MIN(maxAddressReg, (count * size - 1) / 4096 + 1);
-	if(count * size > 4096*numAddressReg){
-		if(vexriscv_write_memory(target,address,size,numAddressReg*4096/size,buffer)) return ERROR_FAIL;
-		if(vexriscv_write_memory(target,address+4096*numAddressReg,size,count-4096/size*numAddressReg,buffer+4096*numAddressReg))  return ERROR_FAIL;
-		return ERROR_OK;
-	}
 
-	if (count == 0 || buffer == NULL)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-
-	vexriscv->regs->x1.dirty = 1;
-	vexriscv->regs->x2.dirty = 1;
-	for(int i = 0;i <= numAddressReg;i++){
-		vexriscv->core_cache->reg_list[i+3]->dirty = 1;
-		vexriscv_pushInstruction_no_execute(target,)
-	}
-*/
-	vexriscv->regs->x1.dirty = 1;
-	vexriscv->regs->x2.dirty = 1;
-	while (count--) {
-		switch(size){
-		case 4:
-			vexriscv_write_regfile(target, false, 1,*((uint32_t*)buffer));
-			vexriscv_write_regfile(target, false, 2,address);
-			vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x2 << 12) | 0x23); //SW x1,0(x2)
-			break;
-		case 2:
-			vexriscv_write_regfile(target, false, 1,*((uint16_t*)buffer));
-			vexriscv_write_regfile(target, false, 2,address);
-			vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x1 << 12) | 0x23); //SH x1,0(x2)
-			break;
-		case 1:
-			vexriscv_write_regfile(target, false, 1,*((uint8_t*)buffer));
-			vexriscv_write_regfile(target, false, 2,address);
-			vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x0 << 12) | 0x23); //SB x1,0(x2)
-			break;
+	if(size == 4 && count > 4){
+		//use 4 address registers over a range of 16K in order to reduce JTAG usage
+		int maxAddressReg = 4;
+		uint32_t numAddressReg = MIN(maxAddressReg, (count * size - 1) / 4096 + 1);
+		if(count * size > 4096*numAddressReg){
+			if(vexriscv_write_memory(target,address,size,numAddressReg*4096/size,buffer)) return ERROR_FAIL;
+			if(vexriscv_write_memory(target,address+4096*numAddressReg,size,count-4096/size*numAddressReg,buffer+4096*numAddressReg))  return ERROR_FAIL;
+			return ERROR_OK;
 		}
 
-		address += size;
-		buffer += size;
-	}
+		if (count == 0 || buffer == NULL)
+			return ERROR_COMMAND_SYNTAX_ERROR;
 
+
+		struct vexriscv_mem_access accesses[count];
+		for(uint32_t accessId = 0;accessId < count;accessId++){
+			accesses[accessId].address = address + accessId*size;
+			accesses[accessId].data = ((uint32_t*)buffer)[accessId];
+		}
+		//Sort access by data value
+		qsort (accesses, sizeof(accesses)/sizeof(*accesses), sizeof(*accesses), vexriscv_mem_access_comp);
+
+
+		vexriscv->regs->x1.dirty = 1;
+		vexriscv->regs->x2.dirty = 1;
+		for(uint32_t i = 0;i < numAddressReg;i++){
+			vexriscv->core_cache->reg_list[i+3].dirty = 1;
+			vexriscv_write_regfile(target, false, i + 3, address + 2048 + 4096*i);
+		}
+
+		uint32_t x1Value = (accesses[0].data + 2048) & 0xFFFFF000;
+		uint32_t x2Value = accesses[0].data;
+		vexriscv_write_regfile(target, false, 1, x1Value);
+		vexriscv_pushInstruction(target, false , 0x13 | (2 << 7) | (1 << 15) | ((x2Value - x1Value) << 20));//ADDI x2, x1, -2048
+
+		uint32_t saved = 0;
+		for(uint32_t accessId = 0;accessId < count;accessId++){
+			struct vexriscv_mem_access access = accesses[accessId];
+			uint32_t addressReg = ((access.address - address) >> 12) + 3;
+			int32_t storeOffset =  ((access.address - address) & 0xFFF) - 2048;
+
+			if(x1Value + 2047 < access.data){
+				x1Value = (access.data + 2048) & 0xFFFFF000;
+				vexriscv_write_regfile(target, false, 1, x1Value);
+			} else
+				saved++;
+
+			if(x2Value != access.data){
+				vexriscv_pushInstruction(target, false , 0x13 | (2 << 7) | (1 << 15) | ((access.data - x1Value) << 20));//ADDI x2, x1, delta
+				x2Value = access.data;
+			}else
+				saved++;
+
+			vexriscv_pushInstruction(target, false, ((storeOffset & 0xFE0) << 20) | (2 << 20) | (addressReg << 15) | (0x2 << 12) | ((storeOffset & 0x1F) << 7) | 0x23); //SW x2,storeOffset(xAddressReg)
+		}
+		LOG_DEBUG("SAVED : %x\n",saved);
+
+		//Easy way
+		/*for(uint32_t accessId = 0;accessId < count;accessId++){
+			uint32_t accessAddress = address + accessId*size;
+			uint32_t addressReg = ((accessAddress - address) >> 12) + 3;
+			int32_t storeOffset =  ((accessAddress - address) & 0xFFF) - 2048;
+			vexriscv_write_regfile(target, false, 1,*((uint32_t*)buffer));
+			vexriscv_pushInstruction(target, false, ((storeOffset & 0xFE0) << 20) | (1 << 20) | (addressReg << 15) | (0x2 << 12) | ((storeOffset & 0x1F) << 7) | 0x23); //SW x1,storeOffset(xAddressReg)
+			buffer += size;
+		}*/
+	} else {
+		//Generic but slow way
+		vexriscv->regs->x1.dirty = 1;
+		vexriscv->regs->x2.dirty = 1;
+		while (count--) {
+			switch(size){
+			case 4:
+				vexriscv_write_regfile(target, false, 1,*((uint32_t*)buffer));
+				vexriscv_write_regfile(target, false, 2,address);
+				vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x2 << 12) | 0x23); //SW x1,0(x2)
+				break;
+			case 2:
+				vexriscv_write_regfile(target, false, 1,*((uint16_t*)buffer));
+				vexriscv_write_regfile(target, false, 2,address);
+				vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x1 << 12) | 0x23); //SH x1,0(x2)
+				break;
+			case 1:
+				vexriscv_write_regfile(target, false, 1,*((uint8_t*)buffer));
+				vexriscv_write_regfile(target, false, 2,address);
+				vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x0 << 12) | 0x23); //SB x1,0(x2)
+				break;
+			}
+
+			address += size;
+			buffer += size;
+		}
+	}
 	if(jtag_execute_queue())
 		return ERROR_FAIL;
 	return ERROR_OK;
@@ -1098,7 +1169,7 @@ static int vexriscv_readStatusRegister(struct target *target, bool execute, uint
 	return execute ? jtag_execute_queue() : 0;
 }
 
-static int vexriscv_readDataRegister(struct target *target, bool execute, uint32_t *value){
+static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value);
