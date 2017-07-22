@@ -28,7 +28,6 @@
 #define vexriscv_FLAGS_PIP_BUSY 1<<2
 #define vexriscv_FLAGS_HALTED_BY_BREAK 1<<3
 #define vexriscv_FLAGS_STEP 1<<4
-#define vexriscv_FLAGS_PC_INC 1<<5
 
 #define vexriscv_FLAGS_RESET_SET 1<<16
 #define vexriscv_FLAGS_HALT_SET 1<<17
@@ -338,49 +337,35 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 	return ERROR_OK;
 }
 
-
-int vexriscv_write_regfile(struct target* target,uint32_t regId,uint32_t value){
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	int error;
+int vexriscv_write_regfile(struct target* target, bool execute,uint32_t regId,uint32_t value){
 	uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
 	if(low & 0x800){
 		high += 0x1000;
 	}
 
-	if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x37 | (regId << 7) | high)) != ERROR_OK) //LUI regId, high
-		return error;
-
-	if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x13 | (regId << 7) | (regId << 15) | (low << 20))) != ERROR_OK) //ADDI regId, x1, low
-		return error;
-	return ERROR_OK;
-
+	vexriscv_pushInstruction(target, false , 0x37 | (regId << 7) | high); //LUI regId, high
+	return vexriscv_pushInstruction(target,execute , 0x13 | (regId << 7) | (regId << 15) | (low << 20));//ADDI regId, x1, low
 }
+
+
+
 
 static int vexriscv_get_core_reg(struct reg *reg)
 {
 	struct vexriscv_core_reg *vexriscv_reg = reg->arch_info;
 	struct target *target = vexriscv_reg->target;
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	int error;
 
 	if (vexriscv_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
 	if(!reg->valid){
 		if(reg->number < 32){
-			if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x13 | (reg->number << 15))) != ERROR_OK) //ADDI x0, x?, 0
-				return error;
-			if((error = vexriscv_read32(target,vexriscv->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
-				return error;
+			return ERROR_FAIL;
 		}else if(reg->number == 32){
-			if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x17)) != ERROR_OK) //AUIPC x0,0
-				return error;
-			if((error = vexriscv_read32(target,vexriscv->dbgBase + 4,((uint32_t*)reg->value))) != ERROR_OK)
-				return error;
+			vexriscv_pushInstruction(target, false, 0x17); //AUIPC x0,0
+			vexriscv_readDataRegister(target, true, (uint32_t*)reg->value);
 		}else{
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
-			//YY
-			//return ERROR_FAIL;
 		}
 
 		reg->valid = true;
@@ -649,10 +634,9 @@ static int vexriscv_arch_state(struct target *target)
 
 
 static int vexriscv_is_running(struct target * target,uint32_t *running){
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	uint32_t flags;
 	int error;
-	if((error = vexriscv_read32(target,vexriscv->dbgBase,&flags)) != ERROR_OK){
+	if((error = vexriscv_readStatusRegister(target, true, &flags)) != ERROR_OK){
 		LOG_ERROR("Error while calling vexriscv_is_cpu_running");
 		return error;
 	}
@@ -662,11 +646,10 @@ static int vexriscv_is_running(struct target * target,uint32_t *running){
 }
 
 static int vexriscv_flush_bus(struct target *target,struct BusInfo * busInfo){
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	if(!busInfo) return ERROR_OK;
 	for(uint32_t idx = 0;idx < busInfo->flushInstructionsSize;idx++){
-		vexriscv_write32_no_execute(target,vexriscv->dbgBase + 4,busInfo->flushInstructions[idx]);
+		vexriscv_pushInstruction(target, false, busInfo->flushInstructions[idx]);
 	}
 	if((error = jtag_execute_queue()) != ERROR_OK)
 		return error;
@@ -699,48 +682,31 @@ static int vexriscv_save_context(struct target *target)
 
 
 	uint32_t flags;
-	if((error = vexriscv_read32(target,vexriscv->dbgBase,&flags)) != ERROR_OK)
+	if((error = vexriscv_readStatusRegister(target, true, &flags)) != ERROR_OK)
 		return error;
 
 	//get PC in case of breakpoint before losing the value
 	if(flags & vexriscv_FLAGS_HALTED_BY_BREAK){
 		struct reg* reg = &vexriscv->regs->pc;
-		if((error = vexriscv_read32(target,vexriscv->dbgBase+4,(uint32_t*)reg->value)) != ERROR_OK)
-			return error;
+		vexriscv_readDataRegister(target, false, (uint32_t*)reg->value);
 		reg->valid = 1;
 		reg->dirty = 1;
 	}
 
-	//Read all common CPU registers, as debuggers will always ask them even if they don't need them.
-	/*for(uint32_t regId = 0;regId < 32;regId++){
-		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
-
-		if(vexriscv_write32(target,vexriscv->dbgBase + 4,0x13 | (reg->number << 15))) //ADDI x0, x?, 0
-			return ERROR_FAIL;
-		if(vexriscv_read32(target,vexriscv->dbgBase + 4,(uint32_t*)reg->value))
-			return ERROR_FAIL;
-
-		reg->valid = 1;
-		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
-	}*/
-
-	uint8_t flagsBuffer[32];
 	for(uint32_t regId = 0;regId < 32;regId++){
 		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
-		vexriscv_write32_no_execute(target,vexriscv->dbgBase + 4,0x13 | (reg->number << 15)); //ADDI x0, x?, 0
-		vexriscv_read32_no_execute(target,vexriscv->dbgBase + 4,(uint32_t*)reg->value,flagsBuffer + regId);
-	}
-	if((error = jtag_execute_queue()) != ERROR_OK)
-		return error;
-	for(uint32_t regId = 0;regId < 32;regId++){
-		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
-		if(vexriscv_check_rsp_Flags(flagsBuffer[regId]) != ERROR_OK)
-			return ERROR_FAIL;
+		vexriscv_pushInstruction(target, false, 0x13 | (reg->number << 15)); //ADDI x0, x?, 0
+		vexriscv_readDataRegister(target, false, (uint32_t*)reg->value);
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
 	}
-	if((error = vexriscv_flush_caches(target)) != ERROR_OK) //Flush instruction cache
-		return error;
+
+	//Flush commands
+	if(jtag_execute_queue())
+		return ERROR_FAIL;
+
+//	if((error = vexriscv_flush_caches(target)) != ERROR_OK) //Flush instruction cache
+//		return error;
 
 	return ERROR_OK;
 }
@@ -750,14 +716,12 @@ static int vexriscv_save_context(struct target *target)
 static int vexriscv_restore_context(struct target *target)
 {
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	int error;
 	LOG_DEBUG("-");
 
 	//PC
 	if(vexriscv->regs->pc.valid && vexriscv->regs->pc.dirty){
-		if((error = vexriscv_write_regfile(target,1,*((uint32_t*)vexriscv->regs->pc.value))) != ERROR_OK) return error;
-		if((error = vexriscv_write32(target,vexriscv->dbgBase + 4,0x67 | (1 << 15))) != ERROR_OK) //JALR x1
-			return error;
+		vexriscv_write_regfile(target, false, 1,*((uint32_t*)vexriscv->regs->pc.value));
+		vexriscv_pushInstruction(target, false, 0x67 | (1 << 15)); //JALR x1
 
 		vexriscv->regs->pc.valid = false;
 		vexriscv->regs->pc.dirty = false;
@@ -766,26 +730,23 @@ static int vexriscv_restore_context(struct target *target)
 	for(uint32_t i = 0;i < 32;i++){
 		struct reg *reg = vexriscv->core_cache->reg_list + i;
 		if(reg->valid && reg->dirty){
-			if((error = vexriscv_write_regfile(target,i,*((uint32_t*)reg->value))) != ERROR_OK) return error;
+			vexriscv_write_regfile(target, false, i,*((uint32_t*)reg->value));
 			reg->valid = false;
 			reg->dirty = false;
 		}
 	}
 
-
-
-	return ERROR_OK;
+	return jtag_execute_queue();
 }
 
 
 static int vexriscv_debug_entry(struct target *target)
 {
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("-");
 
 
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return error;
 	}
@@ -801,7 +762,6 @@ static int vexriscv_debug_entry(struct target *target)
 
 static int vexriscv_halt(struct target *target)
 {
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("target->state: %s",target_state_name(target));
 
@@ -819,7 +779,7 @@ static int vexriscv_halt(struct target *target)
 		}
 	}
 
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return error;
 	}
@@ -898,16 +858,15 @@ static int vexriscv_poll(struct target *target)
 
 static int vexriscv_assert_reset(struct target *target)
 {
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("vexriscv_assert_reset\n");
 	target->state = TARGET_RESET;
 
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		return error;
 	}
 
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET | vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET | vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
 		return error;
 	}
 
@@ -917,14 +876,15 @@ static int vexriscv_assert_reset(struct target *target)
 
 static int vexriscv_deassert_reset(struct target *target)
 {
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("vexriscv_deassert_reset\n");
-	target->state = TARGET_RUNNING;
 
-	if ((error = vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
+	if ((error = vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
 		return error;
 	}
+	uint32_t isRunning;
+	if(vexriscv_is_running(target,&isRunning)) return ERROR_FAIL;
+	target->state = isRunning ? TARGET_RUNNING : TARGET_HALTED;
 
 	LOG_DEBUG("%s", __func__);
 	return ERROR_OK;
@@ -988,17 +948,23 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value)
 {
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
-	struct scan_field field;
-	field.num_bits = 34;
-	field.out_value = NULL;
-	field.in_value = value;
-	field.check_value = NULL;
-	field.check_mask = NULL;
+	struct scan_field feilds[2];
+	feilds[0].num_bits = 2; //TODO !!!
+	feilds[0].out_value = NULL;
+	feilds[0].in_value = NULL;
+	feilds[0].check_value = NULL;
+	feilds[0].check_mask = NULL;
+
+	feilds[1].num_bits = 32;
+	feilds[1].out_value = NULL;
+	feilds[1].in_value = (uint8_t*)value;
+	feilds[1].check_value = NULL;
+	feilds[1].check_mask = NULL;
 
 	if(!vexriscv->useTCP) {
 		jtag_add_clocks(vexriscv->readWaitCycles);
 		vexriscv_set_instr(tap, 0x03);
-		jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
+		jtag_add_dr_scan(tap, 2, feilds, TAP_IDLE);
 	} else {
 		uint32_t buffer;
 		if(recv(vexriscv->clientSocket, &buffer, 4, 0) == 4){
@@ -1011,87 +977,97 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value)
 	}
 }
 
-static int vexriscv_check_rsp_Flags(uint8_t flags){
-	return (flags & 0x3) == 1 ? ERROR_OK : ERROR_FAIL;
-}
-
-static void vexriscv_read_rsp_splited(struct target *target,uint32_t *data, uint8_t *flags)
-{
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	struct jtag_tap *tap = target->tap;
-	struct scan_field feilds[2];
-	feilds[0].num_bits = 2;
-	feilds[0].out_value = NULL;
-	feilds[0].in_value = flags;
-	feilds[0].check_value = NULL;
-	feilds[0].check_mask = NULL;
-
-	feilds[1].num_bits = 32;
-	feilds[1].out_value = NULL;
-	feilds[1].in_value = (uint8_t*)data;
-	feilds[1].check_value = NULL;
-	feilds[1].check_mask = NULL;
-
-	if(!vexriscv->useTCP) {
-		jtag_add_clocks(vexriscv->readWaitCycles);
-		vexriscv_set_instr(tap, 0x03);
-		jtag_add_dr_scan(tap, 2, feilds, TAP_IDLE);
-	} else {
-		if(recv(vexriscv->clientSocket, data, 4, 0) != 4){
-			LOG_ERROR("???");
-			*flags = 0;
-		}else {
-			*flags = 1;
-		}
-	}
-}
 static int vexriscv_read_memory(struct target *target, target_addr_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
+	assert(target->state == TARGET_HALTED);
 	if (count == 0 || buffer == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	uint8_t *t = calloc(count*5, 1);
-	uint8_t *tPtr = t;
-	uint32_t idx = count;
-	while (idx--) {
-		vexriscv_memory_cmd(target, address,address,size, 1);
-		vexriscv_read_rsp(target,tPtr);
-		address += size;
-		tPtr += size + 1;
-	}
-	if(jtag_execute_queue())
-		return ERROR_FAIL;
+	uint32_t wordBuffer;
 
-	idx = count;
-	tPtr = t;
-	while(idx--){
-		if((tPtr[0] & 3) != 1)
-			return ERROR_JTAG_DEVICE_ERROR; //"TAP communication problem"
-		bit_copy(buffer,0,tPtr,2,size*8);
-		tPtr += size + 1;
+
+
+	uint32_t idx = count;
+	vexriscv->regs->x1.dirty = 1;
+	while (idx--) {
+		vexriscv_write_regfile(target, false, 1,address);
+		switch(size){
+		case 4:
+			vexriscv_pushInstruction(target, false, (1 << 15) | (0x2 << 12) | 0x3); //LW x0, 0(x1)
+			vexriscv_readDataRegister(target, false, (uint32_t*)buffer);
+			break;
+		case 2:
+			vexriscv_pushInstruction(target, false, (1 << 15) | (0x5 << 12) | 0x3); //LHU x0, 0(x1)
+			vexriscv_readDataRegister(target, false, &wordBuffer);
+			*((uint16_t*)buffer) = wordBuffer;
+			break;
+		case 1:
+			vexriscv_pushInstruction(target, false, (1 << 15) | (0x4 << 12) | 0x3); //LBU x0, 0(x1)
+			vexriscv_readDataRegister(target, false, &wordBuffer);
+			*((uint8_t*)buffer) = wordBuffer;
+			break;
+		}
 		buffer += size;
+		address += size;
 	}
-	free(t);
-	return ERROR_OK;
+
+	return jtag_execute_queue();
 }
 
 static int vexriscv_write_memory(struct target *target, target_addr_t address,
 				uint32_t size, uint32_t count,
 				const uint8_t *buffer)
 {
-	/*LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
-		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	//LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
+	//	  "; size %" PRId32 "; count %" PRId32, (uint32_t)address, size, count);
 
+	assert(target->state == TARGET_HALTED);
+	/*int maxAddressReg = 4;
+	int numAddressReg = MIN(maxAddressReg, (count * size - 1) / 4096 + 1);
+	if(count * size > 4096*numAddressReg){
+		if(vexriscv_write_memory(target,address,size,numAddressReg*4096/size,buffer)) return ERROR_FAIL;
+		if(vexriscv_write_memory(target,address+4096*numAddressReg,size,count-4096/size*numAddressReg,buffer+4096*numAddressReg))  return ERROR_FAIL;
+		return ERROR_OK;
+	}
 
 	if (count == 0 || buffer == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
+
+	vexriscv->regs->x1.dirty = 1;
+	vexriscv->regs->x2.dirty = 1;
+	for(int i = 0;i <= numAddressReg;i++){
+		vexriscv->core_cache->reg_list[i+3]->dirty = 1;
+		vexriscv_pushInstruction_no_execute(target,)
+	}
+*/
+	vexriscv->regs->x1.dirty = 1;
+	vexriscv->regs->x2.dirty = 1;
 	while (count--) {
-		vexriscv_memory_cmd(target, address,*((uint32_t*)buffer),size, 0);
+		switch(size){
+		case 4:
+			vexriscv_write_regfile(target, false, 1,*((uint32_t*)buffer));
+			vexriscv_write_regfile(target, false, 2,address);
+			vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x2 << 12) | 0x23); //SW x1,0(x2)
+			break;
+		case 2:
+			vexriscv_write_regfile(target, false, 1,*((uint16_t*)buffer));
+			vexriscv_write_regfile(target, false, 2,address);
+			vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x1 << 12) | 0x23); //SH x1,0(x2)
+			break;
+		case 1:
+			vexriscv_write_regfile(target, false, 1,*((uint8_t*)buffer));
+			vexriscv_write_regfile(target, false, 2,address);
+			vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x0 << 12) | 0x23); //SB x1,0(x2)
+			break;
+		}
+
 		address += size;
 		buffer += size;
 	}
@@ -1099,6 +1075,34 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 	if(jtag_execute_queue())
 		return ERROR_FAIL;
 	return ERROR_OK;
+}
+
+
+static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_t instruction){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,instruction,4, 0);
+	return execute ? jtag_execute_queue() : 0;
+}
+
+
+static int vexriscv_writeStatusRegister(struct target *target, bool execute, uint32_t value){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase, value, 4, 0);
+	return execute ? jtag_execute_queue() : 0;
+}
+
+static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase,0, 4, 1);
+	vexriscv_read_rsp(target,(uint8_t*)value);
+	return execute ? jtag_execute_queue() : 0;
+}
+
+static int vexriscv_readDataRegister(struct target *target, bool execute, uint32_t *value){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
+	vexriscv_read_rsp(target,(uint8_t*)value);
+	return execute ? jtag_execute_queue() : 0;
 }
 
 static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data){
@@ -1110,13 +1114,7 @@ static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *dat
 	return vexriscv_read_memory(target,address,4,1,(uint8_t*)data);
 }
 
-static void vexriscv_write32_no_execute(struct target *target, uint32_t address,uint32_t data){
-		vexriscv_memory_cmd(target, address, data, 4, 0);
-}
-static void vexriscv_read32_no_execute(struct target *target, uint32_t address,uint32_t *data,uint8_t *flags){
-	vexriscv_memory_cmd(target, address,address,4, 1);
-	vexriscv_read_rsp_splited(target,data,flags);
-}
+
 
 static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_list[],
 			  int *reg_list_size, enum target_register_class reg_class)
@@ -1221,7 +1219,7 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct breakpoint *breakpoint = NULL;
-	int error;
+	int retval;
 
 	LOG_DEBUG("Addr: 0x%" PRIx32 ", stepping: %s, handle breakpoints %s\n",
 		  address, step ? "yes" : "no", handle_breakpoints ? "yes" : "no");
@@ -1242,12 +1240,6 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 	}
 
 
-	int retval = vexriscv_restore_context(target);
-	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while calling vexriscv_restore_context");
-		return retval;
-	}
-
 
 	/* The front-end may request us not to handle breakpoints */
 	if (handle_breakpoints) {
@@ -1261,10 +1253,18 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 		}
 	}
 
+
+	vexriscv_flush_caches(target);
+
+	if ((retval = vexriscv_restore_context(target))){
+		LOG_ERROR("Error while calling vexriscv_restore_context");
+		return retval;
+	}
+
 	/* Unstall */
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_CLEAR | (step ? vexriscv_FLAGS_STEP : 0))) != ERROR_OK) {
+	if ((retval = vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_CLEAR | (step ? vexriscv_FLAGS_STEP : 0))) != ERROR_OK) {
 		LOG_ERROR("Error while unstalling the CPU");
-		return error;
+		return retval;
 	}
 
 
@@ -1357,20 +1357,19 @@ static int vexriscv_examine(struct target *target)
 
 static int vexriscv_soft_reset_halt(struct target *target)
 {
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("-");
 
 
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}
-	if ((error =  vexriscv_write32(target, vexriscv->dbgBase,vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
+	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}

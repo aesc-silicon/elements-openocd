@@ -22,12 +22,16 @@
 
 #define vexriscv_BREAK_INST 0x00100073
 
+//CPU interface
+static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value);
+static int vexriscv_writeStatusRegister(struct target *target, bool execute, uint32_t value);
+static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_t instruction);
+static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value);
+
+//Abstractions
+static int vexriscv_write_memory(struct target *target, target_addr_t address, uint32_t size, uint32_t count, const uint8_t *buffer);
 static int vexriscv_read_memory(struct target *target, target_addr_t address, uint32_t size, uint32_t count, uint8_t *buffer);
 static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data);
 static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data);
-static void vexriscv_write32_no_execute(struct target *target, uint32_t address,uint32_t data);
-static void vexriscv_read32_no_execute(struct target *target, uint32_t address,uint32_t *data,uint8_t *flags);
-static void vexriscv_read_rsp_splited(struct target *target,uint32_t *data,uint8_t* flags);
-static int vexriscv_check_rsp_Flags(uint8_t flags);
 static int vexriscv_halt(struct target *target);
 #endif /* __vexriscv_H__ */
