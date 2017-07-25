@@ -951,33 +951,39 @@ static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t
 	}
 }
 
-static void vexriscv_read_rsp(struct target *target,uint8_t *value)
+static void vexriscv_read_rsp(struct target *target,uint8_t *value, uint32_t size)
 {
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
-	struct scan_field feilds[2];
+	struct scan_field feilds[3];
 	feilds[0].num_bits = 2; //TODO !!!
 	feilds[0].out_value = NULL;
 	feilds[0].in_value = NULL;
 	feilds[0].check_value = NULL;
 	feilds[0].check_mask = NULL;
 
-	feilds[1].num_bits = 32;
+	feilds[1].num_bits = 8*size;
 	feilds[1].out_value = NULL;
 	feilds[1].in_value = (uint8_t*)value;
 	feilds[1].check_value = NULL;
 	feilds[1].check_mask = NULL;
 
+	feilds[2].num_bits = 32-8*size;
+	feilds[2].out_value = NULL;
+	feilds[2].in_value = NULL;
+	feilds[2].check_value = NULL;
+	feilds[2].check_mask = NULL;
+
 	if(!vexriscv->useTCP) {
 		jtag_add_clocks(vexriscv->readWaitCycles);
 		vexriscv_set_instr(tap, 0x03);
-		jtag_add_dr_scan(tap, 2, feilds, TAP_IDLE);
+		jtag_add_dr_scan(tap, size == 4 ? 2 : 3, feilds, TAP_IDLE);
 	} else {
 		uint32_t buffer;
 		if(recv(vexriscv->clientSocket, &buffer, 4, 0) == 4){
 			//value[0] = 1;
 			//bit_copy(value,2,(uint8_t *) &buffer,0,32);
-			bit_copy(value,0,(uint8_t *) &buffer,0,32);
+			bit_copy(value,0,(uint8_t *) &buffer,0,8*size);
 		} else{
 			LOG_ERROR("???");
 			value[0] = 0;
@@ -988,7 +994,6 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value)
 static int vexriscv_read_memory(struct target *target, target_addr_t address,
 			       uint32_t size, uint32_t count, uint8_t *buffer)
 {
-	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	/*LOG_DEBUG("Reading memory at physical address 0x%" PRIx32
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);*/
 
@@ -996,28 +1001,24 @@ static int vexriscv_read_memory(struct target *target, target_addr_t address,
 	if (count == 0 || buffer == NULL)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	uint32_t wordBuffer;
+	for(uint32_t idx = 0;idx < count;idx++){
+		vexriscv_write_regfile(target, false, 1, address);
 
-
-
-	uint32_t idx = count;
-	vexriscv->regs->x1.dirty = 1;
-	while (idx--) {
-		vexriscv_write_regfile(target, false, 1,address);
 		switch(size){
 		case 4:
-			vexriscv_pushInstruction(target, false, (1 << 15) | (0x2 << 12) | 0x3); //LW x0, 0(x1)
+			((uint32_t*)buffer)[0] = 0;
+			vexriscv_pushInstruction(target, false, (1 << 15) | (0x2 << 12) | (1 << 7) | 0x3); //LW x1, 0(x1)
 			vexriscv_readInstructionResult(target, false, (uint32_t*)buffer);
 			break;
 		case 2:
-			vexriscv_pushInstruction(target, false, (1 << 15) | (0x5 << 12) | 0x3); //LHU x0, 0(x1)
-			vexriscv_readInstructionResult(target, false, &wordBuffer);
-			*((uint16_t*)buffer) = wordBuffer;
+			((uint16_t*)buffer)[0] = 0;
+			vexriscv_pushInstruction(target, false, (1 << 15) | (0x5 << 12) | (1 << 7) | 0x3); //LHU x1, 0(x1)
+			vexriscv_readInstructionResult16(target, false, (uint16_t*)buffer);
 			break;
 		case 1:
-			vexriscv_pushInstruction(target, false, (1 << 15) | (0x4 << 12) | 0x3); //LBU x0, 0(x1)
-			vexriscv_readInstructionResult(target, false, &wordBuffer);
-			*((uint8_t*)buffer) = wordBuffer;
+			((uint8_t*)buffer)[0] = 0;
+			vexriscv_pushInstruction(target, false, (1 << 15) | (0x4 << 12) | (1 << 7) | 0x3); //LBU x1, 0(x1)
+			vexriscv_readInstructionResult8(target, false, (uint8_t*)buffer);
 			break;
 		}
 		buffer += size;
@@ -1165,16 +1166,31 @@ static int vexriscv_writeStatusRegister(struct target *target, bool execute, uin
 static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase,0, 4, 1);
-	vexriscv_read_rsp(target,(uint8_t*)value);
+	vexriscv_read_rsp(target,(uint8_t*)value, 4);
 	return execute ? jtag_execute_queue() : 0;
 }
 
 static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
-	vexriscv_read_rsp(target,(uint8_t*)value);
+	vexriscv_read_rsp(target,(uint8_t*)value, 4);
 	return execute ? jtag_execute_queue() : 0;
 }
+
+static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint16_t *value){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
+	vexriscv_read_rsp(target,(uint8_t*)value, 2);
+	return execute ? jtag_execute_queue() : 0;
+}
+
+static int vexriscv_readInstructionResult8(struct target *target, bool execute, uint8_t *value){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
+	vexriscv_read_rsp(target,(uint8_t*)value, 1);
+	return execute ? jtag_execute_queue() : 0;
+}
+
 
 static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data){
 	return vexriscv_write_memory(target,address,4,1,(uint8_t*)&data);
