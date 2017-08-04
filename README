@@ -30,6 +30,16 @@ Examples of usage :
 - src/openocd -f tcl/interface/jtag_tcp.cfg -c 'set MURAX_CPU0_YAML /home/spinalvm/Spinal/VexRiscv/cpu0.yaml' -f tcl/target/murax.cfg
 - src/openocd -c 'set VEXRISCV_YAML /home/spinalvm/Spinal/VexRiscv/cpu0.yaml' -f tcl/target/vexriscv_sim.cfg
 
+Example of RISC-V GDB usage :
+
+riscv32-unknown-elf-gdb myExecutable.elf
+target remote localhost:3333
+set remotetimeout 60
+monitor reset halt
+load
+continue
+
+
 Welcome to OpenOCD!
 ===================
 
