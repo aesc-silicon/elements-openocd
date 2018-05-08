@@ -21,6 +21,7 @@
 #define SINGLE_STEP		1
 
 #define vexriscv_BREAK_INST 0x00100073
+#define vexriscv_BREAKC_INST 0x9002
 
 //CPU interface
 static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value);
@@ -33,7 +34,7 @@ static int vexriscv_readInstructionResult8(struct target *target, bool execute, 
 //Abstractions
 static int vexriscv_write_memory(struct target *target, target_addr_t address, uint32_t size, uint32_t count, const uint8_t *buffer);
 static int vexriscv_read_memory(struct target *target, target_addr_t address, uint32_t size, uint32_t count, uint8_t *buffer);
-static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data);
-static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data);
+//static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data);
+//static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data);
 static int vexriscv_halt(struct target *target);
 #endif /* __vexriscv_H__ */
