@@ -726,7 +726,7 @@ static int vexriscv_restore_context(struct target *target)
 	LOG_DEBUG("-");
 
 	//PC
-	if(vexriscv->regs->pc.valid && vexriscv->regs->pc.dirty){
+	if(vexriscv->regs->pc.valid){
 		vexriscv_write_regfile(target, false, 1,*((uint32_t*)vexriscv->regs->pc.value));
 		vexriscv_pushInstruction(target, false, 0x67 | (1 << 15)); //JALR x1
 
@@ -1190,7 +1190,7 @@ static int vexriscv_readInstructionResult8(struct target *target, bool execute, 
 	vexriscv_read_rsp(target,(uint8_t*)value, 1);
 	return execute ? jtag_execute_queue() : 0;
 }
-
+/*
 
 static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data){
 	return vexriscv_write_memory(target,address,4,1,(uint8_t*)&data);
@@ -1200,8 +1200,13 @@ static int vexriscv_write32(struct target *target, uint32_t address,uint32_t dat
 static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data){
 	return vexriscv_read_memory(target,address,4,1,(uint8_t*)data);
 }
-
-
+*/
+static int vexriscv_read16(struct target *target, uint32_t address,uint16_t *data){
+	return vexriscv_read_memory(target,address,2,1,(uint8_t*)data);
+}
+static int vexriscv_write16(struct target *target, uint32_t address,uint16_t data){
+	return vexriscv_write_memory(target,address,2,1,(uint8_t*)&data);
+}
 
 static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_list[],
 			  int *reg_list_size, enum target_register_class reg_class)
@@ -1240,12 +1245,18 @@ static int vexriscv_add_breakpoint(struct target *target,
 		LOG_ERROR("HW breakpoints not supported for now. Doing SW breakpoint.");
 
 	/* Read and save the instruction */
-	int retval = vexriscv_read32(target,
+	int retval = vexriscv_read16(target,
 					 breakpoint->address,
-					 &data);
+					 (uint16_t*)(&data));
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32,
-				(uint32_t)breakpoint->address);
+		LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32, (uint32_t)breakpoint->address);
+		return retval;
+	}
+	retval = vexriscv_read16(target,
+					 breakpoint->address+2,
+					 ((uint16_t*)(&data))+1);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32, (uint32_t)breakpoint->address);
 		return retval;
 	}
 
@@ -1256,14 +1267,35 @@ static int vexriscv_add_breakpoint(struct target *target,
 	memcpy(breakpoint->orig_instr, &data, 4);
 
 	/* Sub in the vexriscv trap instruction */
-	retval = vexriscv_write32(target,
-					  breakpoint->address,
-					  vexriscv_BREAK_INST);
+	if((data & 3) == 3){
+		retval = vexriscv_write16(target,
+						  breakpoint->address,
+						  (uint16_t)vexriscv_BREAK_INST);
 
-	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
-				(uint32_t)breakpoint->address);
-		return retval;
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
+					(uint32_t)breakpoint->address);
+			return retval;
+		}
+		retval = vexriscv_write16(target,
+						  breakpoint->address+2,
+						  (uint16_t)(vexriscv_BREAK_INST >> 16));
+
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
+					(uint32_t)breakpoint->address+2);
+			return retval;
+		}
+	}else{
+		retval = vexriscv_write16(target,
+						  breakpoint->address,
+						  vexriscv_BREAKC_INST);
+
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
+					(uint32_t)breakpoint->address);
+			return retval;
+		}
 	}
 
 	/* TODO invalidate instruction cache */
@@ -1283,17 +1315,38 @@ static int vexriscv_remove_breakpoint(struct target *target,
 		LOG_ERROR("HW breakpoints not supported for now. Doing SW breakpoint.");
 
 	/* Replace the removed instruction */
-	int retval = vexriscv_write32(target,
-					  breakpoint->address,
-					  *((uint32_t*)breakpoint->orig_instr));
+	uint32_t data = *((uint32_t*)breakpoint->orig_instr);
+	if((data & 3) == 3){
+		int retval = vexriscv_write16(target,
+						  breakpoint->address,
+						  (uint16_t)data);
 
-	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
-				(uint32_t)breakpoint->address);
-		return retval;
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
+					(uint32_t)breakpoint->address);
+			return retval;
+		}
+		retval = vexriscv_write16(target,
+						  breakpoint->address+2,
+						  (uint16_t)(data >> 16));
+
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
+					(uint32_t)breakpoint->address+2);
+			return retval;
+		}
+	}else{
+		int retval = vexriscv_write16(target,
+						  breakpoint->address,
+						  (uint16_t)data);
+
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
+					(uint32_t)breakpoint->address);
+			return retval;
+		}
 	}
 
-	/* TODO invalidate instruction cache */
 
 	return ERROR_OK;
 }
