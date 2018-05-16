@@ -789,7 +789,7 @@ int mips32_checksum_memory(struct target *target, target_addr_t address,
 	if (target_alloc_working_area(target, sizeof(mips_crc_code), &crc_algorithm) != ERROR_OK)
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 
-	pracc_swap16_array(ejtag_info, mips_crc_code, ARRAY_SIZE(mips_crc_code));
+	//pracc_swap16_array(ejtag_info, mips_crc_code, ARRAY_SIZE(mips_crc_code));
 
 	/* convert mips crc code into a buffer in target endianness */
 	uint8_t mips_crc_code_8[sizeof(mips_crc_code)];
@@ -856,7 +856,7 @@ int mips32_blank_check_memory(struct target *target,
 	if (target_alloc_working_area(target, sizeof(erase_check_code), &erase_check_algorithm) != ERROR_OK)
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 
-	pracc_swap16_array(ejtag_info, erase_check_code, ARRAY_SIZE(erase_check_code));
+	//pracc_swap16_array(ejtag_info, erase_check_code, ARRAY_SIZE(erase_check_code));
 
 	/* convert erase check code into a buffer in target endianness */
 	uint8_t erase_check_code_8[sizeof(erase_check_code)];
