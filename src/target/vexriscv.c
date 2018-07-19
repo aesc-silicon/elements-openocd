@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <yaml.h>
+#include <errno.h>
 
 #define vexriscv_FLAGS_RESET 1<<0
 #define vexriscv_FLAGS_HALT 1<<1
@@ -980,12 +981,22 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value, uint32_t siz
 		jtag_add_dr_scan(tap, size == 4 ? 2 : 3, feilds, TAP_IDLE);
 	} else {
 		uint32_t buffer;
-		if(recv(vexriscv->clientSocket, &buffer, 4, 0) == 4){
+		int bytes_read;
+		bytes_read = recv(vexriscv->clientSocket, &buffer, 4, 0);
+		if (bytes_read == 4) {
 			//value[0] = 1;
 			//bit_copy(value,2,(uint8_t *) &buffer,0,32);
 			bit_copy(value,0,(uint8_t *) &buffer,0,8*size);
-		} else{
-			LOG_ERROR("???");
+		} else if (bytes_read == 0) {
+			LOG_ERROR("remote bridge closed network connection");
+			value[0] = 0;
+			exit(0);
+		} else if (bytes_read == -1) {
+			LOG_ERROR("network connection error: %s\n", strerror(errno));
+			value[0] = 0;
+			exit(0);
+		} else {
+			LOG_ERROR("unexpected number of bytes read: %d\n", bytes_read);
 			value[0] = 0;
 		}
 	}
