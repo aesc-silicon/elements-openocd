@@ -338,6 +338,13 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 	return ERROR_OK;
 }
 
+static int vexriscv_execute_jtag_queue(struct target *target) {
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	if (vexriscv->useTCP)
+		return 0;
+	return jtag_execute_queue();
+}
+
 int vexriscv_write_regfile(struct target* target, bool execute,uint32_t regId,uint32_t value){
 	if(value & 0xFFFFF800){ //Require LUI
 		uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
@@ -659,7 +666,7 @@ static int vexriscv_flush_bus(struct target *target,struct BusInfo * busInfo){
 	for(uint32_t idx = 0;idx < busInfo->flushInstructionsSize;idx++){
 		vexriscv_pushInstruction(target, false, busInfo->flushInstructions[idx]);
 	}
-	if((error = jtag_execute_queue()) != ERROR_OK)
+	if((error = vexriscv_execute_jtag_queue(target)) != ERROR_OK)
 		return error;
 	while(1){
 		uint32_t running;
@@ -710,7 +717,7 @@ static int vexriscv_save_context(struct target *target)
 	}
 
 	//Flush commands
-	if(jtag_execute_queue())
+	if(vexriscv_execute_jtag_queue(target))
 		return ERROR_FAIL;
 
 //	if((error = vexriscv_flush_caches(target)) != ERROR_OK) //Flush instruction cache
@@ -744,7 +751,7 @@ static int vexriscv_restore_context(struct target *target)
 		}
 	}
 
-	return jtag_execute_queue();
+	return vexriscv_execute_jtag_queue(target);
 }
 
 
@@ -1036,7 +1043,7 @@ static int vexriscv_read_memory(struct target *target, target_addr_t address,
 		address += size;
 	}
 
-	return jtag_execute_queue();
+	return vexriscv_execute_jtag_queue(target);
 }
 
 
@@ -1155,7 +1162,7 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 			buffer += size;
 		}
 	}
-	if(jtag_execute_queue())
+	if(vexriscv_execute_jtag_queue(target))
 		return ERROR_FAIL;
 	return ERROR_OK;
 }
@@ -1164,42 +1171,42 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_t instruction){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,instruction,4, 0);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 
 static int vexriscv_writeStatusRegister(struct target *target, bool execute, uint32_t value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase, value, 4, 0);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 4);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 4);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint16_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 2);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readInstructionResult8(struct target *target, bool execute, uint8_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 1);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 /*
 
