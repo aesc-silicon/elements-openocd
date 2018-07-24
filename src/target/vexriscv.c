@@ -1154,7 +1154,8 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 	//LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
 	//	  "; size %" PRId32 "; count %" PRId32, (uint32_t)address, size, count);
 
-	assert(target->state == TARGET_HALTED);
+	if (target->state != TARGET_HALTED)
+		vexriscv_halt(target);
 
 	if(size == 4 && count > 4){
 		//use 4 address registers over a range of 16K in order to reduce JTAG usage
