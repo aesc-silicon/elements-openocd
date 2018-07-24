@@ -884,6 +884,7 @@ static int vexriscv_poll(struct target *target)
 
 static int vexriscv_assert_reset(struct target *target)
 {
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("vexriscv_assert_reset\n");
 	target->state = TARGET_RESET;
@@ -895,6 +896,10 @@ static int vexriscv_assert_reset(struct target *target)
 	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET | vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
 		return error;
 	}
+
+	// Resetting the CPU causes the program counter to jump to the reset vector.
+	// Our copy is no longer valid.
+	vexriscv->regs->pc.valid = false;
 
 	LOG_DEBUG("%s", __func__);
 	return ERROR_OK;
