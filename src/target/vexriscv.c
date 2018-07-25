@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <yaml.h>
+#include <errno.h>
 
 #define vexriscv_FLAGS_RESET 1<<0
 #define vexriscv_FLAGS_HALT 1<<1
@@ -43,6 +44,11 @@ struct BusInfo{
 	uint32_t *flushInstructions;
 };
 
+enum network_protocol{
+	NP_IVERILOG,
+	NP_ETHERBONE,
+};
+
 struct vexriscv_common {
 	struct jtag_tap *tap;
 	struct reg_cache *core_cache;
@@ -55,6 +61,7 @@ struct vexriscv_common {
 	int useTCP;
 	uint32_t readWaitCycles;
 	char* cpuConfigFile;
+	enum network_protocol networkProtocol;
 	//uint32_t flags;
 	struct BusInfo* iBus, *dBus;
 };
@@ -331,10 +338,18 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 	vexriscv->tap = target->tap;
 	vexriscv->clientSocket = 0;
 	vexriscv->readWaitCycles = 10;
+	vexriscv->networkProtocol = NP_IVERILOG;
 	vexriscv_create_reg_list(target);
 
 
 	return ERROR_OK;
+}
+
+static int vexriscv_execute_jtag_queue(struct target *target) {
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	if (vexriscv->useTCP)
+		return 0;
+	return jtag_execute_queue();
 }
 
 int vexriscv_write_regfile(struct target* target, bool execute,uint32_t regId,uint32_t value){
@@ -612,8 +627,12 @@ static int vexriscv_init_target(struct command_context *cmd_ctx, struct target *
 		//---- Configure settings of the server address struct ----//
 		// Address family = Internet //
 		serverAddr.sin_family = AF_INET;
-		// Set port number, using htons function to use proper byte order //
-		serverAddr.sin_port = htons(7893);
+		if (vexriscv->networkProtocol == NP_IVERILOG)
+			serverAddr.sin_port = htons(7893);
+		else if (vexriscv->networkProtocol == NP_ETHERBONE)
+			serverAddr.sin_port = htons(1234);
+		else
+			LOG_ERROR("Unrecognized network protocol defined");
 		// Set IP address to localhost //
 		serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 		// Set all bits of the padding field to 0 //
@@ -658,7 +677,7 @@ static int vexriscv_flush_bus(struct target *target,struct BusInfo * busInfo){
 	for(uint32_t idx = 0;idx < busInfo->flushInstructionsSize;idx++){
 		vexriscv_pushInstruction(target, false, busInfo->flushInstructions[idx]);
 	}
-	if((error = jtag_execute_queue()) != ERROR_OK)
+	if((error = vexriscv_execute_jtag_queue(target)) != ERROR_OK)
 		return error;
 	while(1){
 		uint32_t running;
@@ -709,7 +728,7 @@ static int vexriscv_save_context(struct target *target)
 	}
 
 	//Flush commands
-	if(jtag_execute_queue())
+	if(vexriscv_execute_jtag_queue(target))
 		return ERROR_FAIL;
 
 //	if((error = vexriscv_flush_caches(target)) != ERROR_OK) //Flush instruction cache
@@ -743,7 +762,7 @@ static int vexriscv_restore_context(struct target *target)
 		}
 	}
 
-	return jtag_execute_queue();
+	return vexriscv_execute_jtag_queue(target);
 }
 
 
@@ -865,6 +884,7 @@ static int vexriscv_poll(struct target *target)
 
 static int vexriscv_assert_reset(struct target *target)
 {
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	int error;
 	LOG_DEBUG("vexriscv_assert_reset\n");
 	target->state = TARGET_RESET;
@@ -876,6 +896,10 @@ static int vexriscv_assert_reset(struct target *target)
 	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET | vexriscv_FLAGS_RESET_SET)) != ERROR_OK) {
 		return error;
 	}
+
+	// Resetting the CPU causes the program counter to jump to the reset vector.
+	// Our copy is no longer valid.
+	vexriscv->regs->pc.valid = false;
 
 	LOG_DEBUG("%s", __func__);
 	return ERROR_OK;
@@ -897,7 +921,80 @@ static int vexriscv_deassert_reset(struct target *target)
 	return ERROR_OK;
 }
 
+static int vexriscv_network_read(struct vexriscv_common *vexriscv, void *buffer, size_t count)
+{
+	if (vexriscv->networkProtocol == NP_IVERILOG)
+		return recv(vexriscv->clientSocket, &buffer, 4, 0);
+	else if (vexriscv->networkProtocol == NP_ETHERBONE) {
+		uint8_t wb_buffer[20];
+		uint32_t intermediate;
+		int ret = read(vexriscv->clientSocket, wb_buffer, sizeof(wb_buffer));
+		if (ret != sizeof(wb_buffer))
+			return 0;
+		memcpy(&intermediate, &wb_buffer[16], sizeof(intermediate));
+		intermediate = be32toh(intermediate);
+		memcpy(buffer, &intermediate, sizeof(intermediate));
+		return 4;
+	}
+	else {
+		return 0;
+	}
+}
 
+static int vexriscv_network_write(struct vexriscv_common *vexriscv, int is_read, uint32_t size, uint32_t address, uint32_t data)
+{
+	if (vexriscv->networkProtocol == NP_IVERILOG)
+	{
+		uint8_t buffer[10];
+		buffer[0] = is_read ? 0 : 1;
+		buffer[1] = size;
+		*((uint32_t *)(buffer + 2)) = address;
+		*((uint32_t *)(buffer + 6)) = data;
+		return send(vexriscv->clientSocket, buffer, 10, 0);
+	}
+	else if (vexriscv->networkProtocol == NP_ETHERBONE)
+	{
+		// size==2 is 32-bits
+		// size==1 is 16-bits
+		// size==0 is 8-bits
+		if (size != 2) {
+			LOG_ERROR("size is not 2 (32-bits): %d", size);
+			exit(0);
+		}
+		uint8_t wb_buffer[20] = {};
+		wb_buffer[0] = 0x4e;	// Magic byte 0
+		wb_buffer[1] = 0x6f;	// Magic byte 1
+		wb_buffer[2] = 0x10;	// Version 1, all other flags 0
+		wb_buffer[3] = 0x44;	// Address is 32-bits, port is 32-bits
+		wb_buffer[4] = 0;		// Padding
+		wb_buffer[5] = 0;		// Padding
+		wb_buffer[6] = 0;		// Padding
+		wb_buffer[7] = 0;		// Padding
+
+		// Record
+		wb_buffer[8] = 0;		// No Wishbone flags are set (cyc, wca, wff, etc.)
+		wb_buffer[9] = 0x0f;	// Byte enable
+
+		if (is_read) {
+			wb_buffer[11] = 1;	// Read count
+			data = htobe32(address);
+			memcpy(&wb_buffer[16], &data, sizeof(data));
+		}
+		else {
+			wb_buffer[10] = 1;	// Write count
+			address = htobe32(address);
+			memcpy(&wb_buffer[12], &address, sizeof(address));
+
+			data = htobe32(data);
+			memcpy(&wb_buffer[16], &data, sizeof(data));
+		}
+		return write(vexriscv->clientSocket, wb_buffer, sizeof(wb_buffer));
+	}
+	else {
+		LOG_ERROR("Unrecognized network protocol");
+		exit(0);
+	}
+}
 
 static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t data,int32_t size, int read)
 {
@@ -941,13 +1038,12 @@ static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t
 	field.check_mask = NULL;
 	if(!vexriscv->useTCP)
 		jtag_add_dr_scan(tap, 1, &field, TAP_IDLE);
-	else {
-		uint8_t buffer[10];
-		buffer[0] = read ? 0 : 1;
-		buffer[1] = size;
-		*((uint32_t*) (buffer + 2)) = address;
-		*((uint32_t*) (buffer + 6)) = data;
-		send(vexriscv->clientSocket,buffer,10,0);
+	else
+	{
+		if (vexriscv_network_write(vexriscv, read, size, address, data) <= 0) {
+			LOG_ERROR("Network connection closed while writing");
+			exit(0);
+		}
 	}
 }
 
@@ -980,12 +1076,21 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value, uint32_t siz
 		jtag_add_dr_scan(tap, size == 4 ? 2 : 3, feilds, TAP_IDLE);
 	} else {
 		uint32_t buffer;
-		if(recv(vexriscv->clientSocket, &buffer, 4, 0) == 4){
+		int bytes_read = vexriscv_network_read(vexriscv, &buffer, sizeof(buffer));
+		if (bytes_read == 4) {
 			//value[0] = 1;
 			//bit_copy(value,2,(uint8_t *) &buffer,0,32);
 			bit_copy(value,0,(uint8_t *) &buffer,0,8*size);
-		} else{
-			LOG_ERROR("???");
+		} else if (bytes_read == 0) {
+			LOG_ERROR("remote bridge closed network connection");
+			value[0] = 0;
+			exit(0);
+		} else if (bytes_read == -1) {
+			LOG_ERROR("network connection error: %s\n", strerror(errno));
+			value[0] = 0;
+			exit(0);
+		} else {
+			LOG_ERROR("unexpected number of bytes read: %d\n", bytes_read);
 			value[0] = 0;
 		}
 	}
@@ -1025,7 +1130,7 @@ static int vexriscv_read_memory(struct target *target, target_addr_t address,
 		address += size;
 	}
 
-	return jtag_execute_queue();
+	return vexriscv_execute_jtag_queue(target);
 }
 
 
@@ -1049,7 +1154,8 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 	//LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
 	//	  "; size %" PRId32 "; count %" PRId32, (uint32_t)address, size, count);
 
-	assert(target->state == TARGET_HALTED);
+	if (target->state != TARGET_HALTED)
+		vexriscv_halt(target);
 
 	if(size == 4 && count > 4){
 		//use 4 address registers over a range of 16K in order to reduce JTAG usage
@@ -1144,7 +1250,7 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 			buffer += size;
 		}
 	}
-	if(jtag_execute_queue())
+	if(vexriscv_execute_jtag_queue(target))
 		return ERROR_FAIL;
 	return ERROR_OK;
 }
@@ -1153,42 +1259,42 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_t instruction){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,instruction,4, 0);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 
 static int vexriscv_writeStatusRegister(struct target *target, bool execute, uint32_t value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase, value, 4, 0);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 4);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 4);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint16_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 2);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
 static int vexriscv_readInstructionResult8(struct target *target, bool execute, uint8_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
 	vexriscv_read_rsp(target,(uint8_t*)value, 1);
-	return execute ? jtag_execute_queue() : 0;
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 /*
 
@@ -1554,6 +1660,22 @@ COMMAND_HANDLER(vexriscv_handle_cpuConfigFile_command)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(vexriscv_handle_networkProtocol_command)
+{
+	if (CMD_ARGC != 1)
+		return ERROR_COMMAND_ARGUMENT_INVALID;
+	struct target *target = get_current_target(CMD_CTX);
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	if (!strcasecmp(CMD_ARGV[0], "iverilog")) {
+		vexriscv->networkProtocol = NP_IVERILOG;
+	} else if (!strcasecmp(CMD_ARGV[0], "etherbone")) {
+		vexriscv->networkProtocol = NP_ETHERBONE;
+	} else {
+		return ERROR_COMMAND_ARGUMENT_INVALID;
+	}
+	return ERROR_OK;
+}
+
 static const struct command_registration vexriscv_exec_command_handlers[] = {
 		{
 			.name = "readWaitCycles",
@@ -1567,6 +1689,12 @@ static const struct command_registration vexriscv_exec_command_handlers[] = {
 			.mode = COMMAND_CONFIG,
 			.help = "Path to the autogenerated configuration file",
 			.usage = "filePath",
+		},{
+			.name = "networkProtocol",
+			.handler = vexriscv_handle_networkProtocol_command,
+			.mode = COMMAND_CONFIG,
+			.help = "Network protocol to use (iverilog, etherbone)",
+			.usage = "iverilog,etherbone",
 		},
 	COMMAND_REGISTRATION_DONE
 };
