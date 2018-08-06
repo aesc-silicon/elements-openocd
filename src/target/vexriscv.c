@@ -14,6 +14,8 @@
  ***************************************************************************/
 #include "vexriscv.h"
 
+// awk 'split($0, a, "\"") {$6 = a[2]} {$7 = a[3]} {gsub(/^[ \t]+/, "", $7)} {print "{\n   .name = \"" $3 "\",\n    .addr = " $1 ",\n    .description = \"" $6 "\",\n    .versions = \"" $7 "\",\n},"}' < riscv-csrs.h
+
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -75,17 +77,11 @@ target_to_vexriscv(struct target *target)
 struct vexriscv_core_reg {
 	const char *name;
 	uint32_t list_num;   /* Index in register cache */
-	uint32_t spr_num;    /* Number in architecture's SPR space */
+	uint32_t csr_num;    /* Number in architecture's SPR space */
+	uint32_t is_csr;     /* False for x0, x1, etc. */
 	uint32_t inHaltOnly;
 	struct target *target;
 	struct vexriscv_common *vexriscv_common;
-};
-
-
-struct vexriscv_core_reg_init {
-	const char *name;
-	uint32_t spr_num;    /* Number in architecture's SPR space */
-	uint32_t inHaltOnly;
 };
 
 
@@ -164,141 +160,7 @@ struct vexriscv_reg_mapping{
 	struct reg pc;
 };
 
-static const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
-	{"x0"    	  , 0   + 0*4, FALSE},
-	{"x1"	      , 0   + 1*4, FALSE},
-	{"x2"	      , 0   + 2*4, FALSE},
-	{"x3"	      , 0   + 3*4, FALSE},
-	{"x4"	      , 0   + 4*4, FALSE},
-	{"x5"	      , 0   + 5*4, FALSE},
-	{"x6"	      , 0   + 6*4, FALSE},
-	{"x7"	      , 0   + 7*4, FALSE},
-	{"x8"	      , 0   + 8*4, FALSE},
-	{"x9"	      , 0   + 9*4, FALSE},
-	{"x10"	      , 0   + 10*4, FALSE},
-	{"x11"	      , 0   + 11*4, FALSE},
-	{"x12"	      , 0   + 12*4, FALSE},
-	{"x13"	      , 0   + 13*4, FALSE},
-	{"x14"	      , 0   + 14*4, FALSE},
-	{"x15"	      , 0   + 15*4, FALSE},
-	{"x16"	      , 0   + 16*4, FALSE},
-	{"x17"	      , 0   + 17*4, FALSE},
-	{"x18"	      , 0   + 18*4, FALSE},
-	{"x19"	      , 0   + 19*4, FALSE},
-	{"x20"	      , 0   + 20*4, FALSE},
-	{"x21"	      , 0   + 21*4, FALSE},
-	{"x22"	      , 0   + 22*4, FALSE},
-	{"x23"	      , 0   + 23*4, FALSE},
-	{"x24"	      , 0   + 24*4, FALSE},
-	{"x25"	      , 0   + 25*4, FALSE},
-	{"x26"	      , 0   + 26*4, FALSE},
-	{"x27"	      , 0   + 27*4, FALSE},
-	{"x28"	      , 0   + 28*4, FALSE},
-	{"x29"	      , 0   + 29*4, FALSE},
-	{"x30"	      , 0   + 30*4, FALSE},
-	{"x31"	      , 0   + 31*4, FALSE},
-	{"pc"       , 512 + 1*4, FALSE},
-	{"ft0"	    , 0   + 0*4, FALSE},
-	{"ft1"	    , 0   + 0*4, FALSE},
-	{"ft2"	    , 0   + 0*4, FALSE},
-	{"ft3"	    , 0   + 0*4, FALSE},
-	{"ft4"	    , 0   + 0*4, FALSE},
-	{"ft5"	    , 0   + 0*4, FALSE},
-	{"ft6"	    , 0   + 0*4, FALSE},
-	{"ft7"	    , 0   + 0*4, FALSE},
-	{"fs0"	    , 0   + 0*4, FALSE},
-	{"fs1"	    , 0   + 0*4, FALSE},
-	{"fa0"	    , 0   + 0*4, FALSE},
-	{"fa1"	    , 0   + 0*4, FALSE},
-	{"fa2"	    , 0   + 0*4, FALSE},
-	{"fa3"	    , 0   + 0*4, FALSE},
-	{"fa4"	    , 0   + 0*4, FALSE},
-	{"fa5"	    , 0   + 0*4, FALSE},
-	{"fa6"	    , 0   + 0*4, FALSE},
-	{"fa7"	    , 0   + 0*4, FALSE},
-	{"fs2"	    , 0   + 0*4, FALSE},
-	{"fs3"	    , 0   + 0*4, FALSE},
-	{"fs4"	    , 0   + 0*4, FALSE},
-	{"fs5"	    , 0   + 0*4, FALSE},
-	{"fs6"	    , 0   + 0*4, FALSE},
-	{"fs7"	    , 0   + 0*4, FALSE},
-	{"fs8"	    , 0   + 0*4, FALSE},
-	{"fs9"	    , 0   + 0*4, FALSE},
-	{"fs10"	    , 0   + 0*4, FALSE},
-	{"fs11"	    , 0   + 0*4, FALSE},
-	{"ft8"	    , 0   + 0*4, FALSE},
-	{"ft9"	    , 0   + 0*4, FALSE},
-	{"ft10"	    , 0   + 0*4, FALSE},
-	{"ft11"	    , 0   + 0*4, FALSE},
-	{"fflags"	, 0   + 0*4, FALSE},
-	{"frm"		, 0   + 0*4, FALSE},
-	{"fcsr"		, 0   + 0*4, FALSE},
-	{"cycle"		, 0   + 0*4, FALSE},
-	{"time"		, 0   + 0*4, FALSE},
-	{"instret"	, 0   + 0*4, FALSE},
-	{"stats"		, 0   + 0*4, FALSE},
-	{"uarch0"	, 0   + 0*4, FALSE},
-	{"uarch1"	, 0   + 0*4, FALSE},
-	{"uarch2"	, 0   + 0*4, FALSE},
-	{"uarch3"	, 0   + 0*4, FALSE},
-	{"uarch4"	, 0   + 0*4, FALSE},
-	{"uarch5"	, 0   + 0*4, FALSE},
-	{"uarch6"	, 0   + 0*4, FALSE},
-	{"uarch7"	, 0   + 0*4, FALSE},
-	{"uarch8"	, 0   + 0*4, FALSE},
-	{"uarch9"	, 0   + 0*4, FALSE},
-	{"uarch10"	, 0   + 0*4, FALSE},
-	{"uarch11"	, 0   + 0*4, FALSE},
-	{"uarch12"	, 0   + 0*4, FALSE},
-	{"uarch13"	, 0   + 0*4, FALSE},
-	{"uarch14"	, 0   + 0*4, FALSE},
-	{"uarch15"	, 0   + 0*4, FALSE},
-	{"sstatus"	, 0   + 0*4, FALSE},
-	{"stvec"		, 0   + 0*4, FALSE},
-	{"sie"		, 0   + 0*4, FALSE},
-	{"stimecmp"	, 0   + 0*4, FALSE},
-	{"sscratch"	, 0   + 0*4, FALSE},
-	{"sepc"		, 0   + 0*4, FALSE},
-	{"sip"		, 0   + 0*4, FALSE},
-	{"sptbr"		, 0   + 0*4, FALSE},
-	{"sasid"		, 0   + 0*4, FALSE},
-	{"cyclew"	, 0   + 0*4, FALSE},
-	{"timew"		, 0   + 0*4, FALSE},
-	{"instretw"	, 0   + 0*4, FALSE},
-	{"stime"		, 0   + 0*4, FALSE},
-	{"scause"	, 0   + 0*4, FALSE},
-	{"sbadaddr"	, 0   + 0*4, FALSE},
-	{"stimew"	, 0   + 0*4, FALSE},
-	{"mstatus"	, 0   + 0*4, FALSE},
-	{"mtvec"		, 0   + 0*4, FALSE},
-	{"mtdeleg"	, 0   + 0*4, FALSE},
-	{"mie"		, 0   + 0*4, FALSE},
-	{"mtimecmp"	, 0   + 0*4, FALSE},
-	{"mscratch"	, 0   + 0*4, FALSE},
-	{"mepc"		, 0   + 0*4, FALSE},
-	{"mcause"	, 0   + 0*4, FALSE},
-	{"mbadaddr"	, 0   + 0*4, FALSE},
-	{"mip"		, 0   + 0*4, FALSE},
-	{"mtime"		, 0   + 0*4, FALSE},
-	{"mcpuid"	, 0   + 0*4, FALSE},
-	{"mimpid"	, 0   + 0*4, FALSE},
-	{"mhartid"	, 0   + 0*4, FALSE},
-	{"mtohost"	, 0   + 0*4, FALSE},
-	{"mfromhost"	, 0   + 0*4, FALSE},
-	{"mreset"	, 0   + 0*4, FALSE},
-	{"send_ipi"	, 0   + 0*4, FALSE},
-	{"cycleh"	, 0   + 0*4, FALSE},
-	{"timeh"		, 0   + 0*4, FALSE},
-	{"instreth"	, 0   + 0*4, FALSE},
-	{"cyclehw"	, 0   + 0*4, FALSE},
-	{"timehw"	, 0   + 0*4, FALSE},
-	{"instrethw", 0   + 0*4, FALSE},
-	{"stimeh"	, 0   + 0*4, FALSE},
-	{"stimehw"	, 0   + 0*4, FALSE},
-	{"mtimeh"	, 0   + 0*4, FALSE}
-
-
-};
+#include "vexriscv-csrs.h"
 
 
 static int vexriscv_create_reg_list(struct target *target)
@@ -312,7 +174,8 @@ static int vexriscv_create_reg_list(struct target *target)
 
 	for (int i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
 		vexriscv_core_reg_list_arch_info[i].name = vexriscv_init_reg_list[i].name;
-		vexriscv_core_reg_list_arch_info[i].spr_num = vexriscv_init_reg_list[i].spr_num;
+		vexriscv_core_reg_list_arch_info[i].csr_num = vexriscv_init_reg_list[i].csr_num;
+		vexriscv_core_reg_list_arch_info[i].is_csr = vexriscv_init_reg_list[i].is_csr;
 		vexriscv_core_reg_list_arch_info[i].inHaltOnly = vexriscv_init_reg_list[i].inHaltOnly;
 		vexriscv_core_reg_list_arch_info[i].list_num = i;
 		vexriscv_core_reg_list_arch_info[i].target = NULL;
@@ -380,13 +243,35 @@ static int vexriscv_get_core_reg(struct reg *reg)
 	if (vexriscv_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
-	if(!reg->valid){
+	if (!reg->valid) {
 		if(reg->number < 32){
 			return ERROR_FAIL;
 		}else if(reg->number == 32){
 			vexriscv_pushInstruction(target, false, 0x17); //AUIPC x0,0
 			vexriscv_readInstructionResult(target, true, (uint32_t*)reg->value);
-		}else{
+		}else if (vexriscv_reg->is_csr) {
+			uint32_t previous_x1;
+			// Save x1, which we'll use to buffer the CSR
+			vexriscv_pushInstruction(target, false, 0x13 | (1 << 15)); //ADDI x0, x1, 0
+			vexriscv_readInstructionResult(target, false, &previous_x1);
+
+
+			// Perform a CSRRW which does a Read/Write.  If rs1 is $x0, then the write
+			// is ignored and side-effect free.  Set rd to $x1 to make the read 
+			// not side-effect free.
+			vexriscv_pushInstruction(target, false, 0
+				| (vexriscv_reg->csr_num << 20)
+				| (0 << 15)	// rs1: x0
+				| (0x1 << 12)	// CSRRW
+				| (1 << 7)	// rd: x1
+				| (0x73 << 0)	// SYSTEM
+				);
+			vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
+
+			// Save the old x1 back to the regfile.
+			vexriscv_write_regfile(target, true, 1, previous_x1);
+		}
+		else {
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
 		}
 
@@ -413,9 +298,34 @@ static int vexriscv_set_core_reg(struct reg *reg, uint8_t *buf)
 		return ERROR_FAIL;
 	}
 
-	reg->dirty = 1;
-	reg->valid = 1;
 	buf_set_u32(reg->value, 0, 32, value);
+
+	if (vexriscv_reg->is_csr) {
+		uint32_t previous_x1;
+		// Save x1, which we'll use to buffer the CSR
+		vexriscv_pushInstruction(target, false, 0x13 | (1 << 15)); //ADDI x0, x1, 0
+		vexriscv_readInstructionResult(target, false, &previous_x1);
+
+
+		// Perform a CSRRW which does a Read/Write.  If rd is $x0, then the read
+		// is ignored and side-effect free.  Set rs1 to $x1 to make the write 
+		// not side-effect free.
+		vexriscv_write_regfile(target, false, 1, *(uint32_t *)reg->value);
+		vexriscv_pushInstruction(target, false, 0
+			| (vexriscv_reg->csr_num << 20)
+			| (1 << 15)	// rs1: x1
+			| (0x1 << 12)	// CSRRW
+			| (0 << 7)	// rd: x0
+			| (0x73 << 0)	// SYSTEM
+			);
+
+		// Save the old x1 back to the regfile.
+		vexriscv_write_regfile(target, true, 1, previous_x1);
+	}
+	else {
+		reg->dirty = 1;
+		reg->valid = 1;
+	}
 	return ERROR_OK;
 }
 
