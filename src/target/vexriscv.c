@@ -14,8 +14,6 @@
  ***************************************************************************/
 #include "vexriscv.h"
 
-// awk 'split($0, a, "\"") {$6 = a[2]} {$7 = a[3]} {gsub(/^[ \t]+/, "", $7)} {print "{\n   .name = \"" $3 "\",\n    .addr = " $1 ",\n    .description = \"" $6 "\",\n    .versions = \"" $7 "\",\n},"}' < riscv-csrs.h
-
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -55,8 +53,8 @@ struct vexriscv_common {
 	struct jtag_tap *tap;
 	struct reg_cache *core_cache;
 	struct vexriscv_reg_mapping *regs;
-	//uint32_t core_regs[vexriscv_NUM_CORE_REGS];
 	uint32_t nb_regs;
+	uint32_t largest_csr;
 	struct vexriscv_core_reg *arch_info;
 	uint32_t dbgBase;
 	int clientSocket;
@@ -64,7 +62,6 @@ struct vexriscv_common {
 	uint32_t readWaitCycles;
 	char* cpuConfigFile;
 	enum network_protocol networkProtocol;
-	//uint32_t flags;
 	struct BusInfo* iBus, *dBus;
 };
 
@@ -87,44 +84,7 @@ struct vexriscv_core_reg {
 
 static struct vexriscv_core_reg *vexriscv_core_reg_list_arch_info;
 
-/*
-enum vexriscv_reg_nums {
-	vexriscv_REG_R0 = 0,
-	vexriscv_REG_R1,
-	vexriscv_REG_R2,
-	vexriscv_REG_R3,
-	vexriscv_REG_R4,
-	vexriscv_REG_R5,
-	vexriscv_REG_R6,
-	vexriscv_REG_R7,
-	vexriscv_REG_R8,
-	vexriscv_REG_R9,
-	vexriscv_REG_R10,
-	vexriscv_REG_R11,
-	vexriscv_REG_R12,
-	vexriscv_REG_R13,
-	vexriscv_REG_R14,
-	vexriscv_REG_R15,
-	vexriscv_REG_R16,
-	vexriscv_REG_R17,
-	vexriscv_REG_R18,
-	vexriscv_REG_R19,
-	vexriscv_REG_R20,
-	vexriscv_REG_R21,
-	vexriscv_REG_R22,
-	vexriscv_REG_R23,
-	vexriscv_REG_R24,
-	vexriscv_REG_R25,
-	vexriscv_REG_R26,
-	vexriscv_REG_R27,
-	vexriscv_REG_R28,
-	vexriscv_REG_R29,
-	vexriscv_REG_R30,
-	vexriscv_REG_R31,
-	vexriscv_REG_PC
-};*/
-
-struct vexriscv_reg_mapping{
+struct vexriscv_reg_mapping {
 	struct reg x0;
 	struct reg x1;
 	struct reg x2;
@@ -166,23 +126,42 @@ struct vexriscv_reg_mapping{
 static int vexriscv_create_reg_list(struct target *target)
 {
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv->largest_csr = 0;
 
-	LOG_DEBUG("-");		
+	unsigned int i;
 
-	vexriscv_core_reg_list_arch_info = malloc(ARRAY_SIZE(vexriscv_init_reg_list) *
+	// GDB CSR numbers are offset by 65.  That is, Risc-V CSR0 is
+	// GDB register number 65.
+	for (i = 0; i < ARRAY_SIZE(vexriscv_init_reg_list); i++)
+		if (vexriscv_init_reg_list[i].is_csr && (vexriscv_init_reg_list[i].csr_num > vexriscv->largest_csr))
+			vexriscv->largest_csr = vexriscv_init_reg_list[i].csr_num;
+	vexriscv->largest_csr += 65;
+
+	vexriscv_core_reg_list_arch_info = malloc(vexriscv->largest_csr *
+				       sizeof(struct vexriscv_core_reg));
+	memset(vexriscv_core_reg_list_arch_info, 0, vexriscv->largest_csr *
 				       sizeof(struct vexriscv_core_reg));
 
-	for (int i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
-		vexriscv_core_reg_list_arch_info[i].name = vexriscv_init_reg_list[i].name;
-		vexriscv_core_reg_list_arch_info[i].csr_num = vexriscv_init_reg_list[i].csr_num;
-		vexriscv_core_reg_list_arch_info[i].is_csr = vexriscv_init_reg_list[i].is_csr;
-		vexriscv_core_reg_list_arch_info[i].inHaltOnly = vexriscv_init_reg_list[i].inHaltOnly;
-		vexriscv_core_reg_list_arch_info[i].list_num = i;
-		vexriscv_core_reg_list_arch_info[i].target = NULL;
-		vexriscv_core_reg_list_arch_info[i].vexriscv_common = NULL;
+	for (i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
+		int gdb_reg_num = i;
+
+		// Offset the CSR register numbers by 65 in the array.
+		if (vexriscv_init_reg_list[i].is_csr)
+			gdb_reg_num = 65 + vexriscv_init_reg_list[i].csr_num;
+
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].name = vexriscv_init_reg_list[i].name;
+
+		// csr_num is the value that's used for instruction encoding.
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].csr_num = vexriscv_init_reg_list[i].csr_num;
+
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].is_csr = vexriscv_init_reg_list[i].is_csr;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].inHaltOnly = vexriscv_init_reg_list[i].inHaltOnly;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].list_num = i;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].target = NULL;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].vexriscv_common = NULL;
 	}
 
-	vexriscv->nb_regs = ARRAY_SIZE(vexriscv_init_reg_list);
+	vexriscv->nb_regs = vexriscv->largest_csr;
 
 
 	return ERROR_OK;
@@ -216,6 +195,7 @@ static int vexriscv_execute_jtag_queue(struct target *target) {
 }
 
 int vexriscv_write_regfile(struct target* target, bool execute,uint32_t regId,uint32_t value){
+	assert(regId <= 32);
 	if(value & 0xFFFFF800){ //Require LUI
 		uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
 		if(low & 0x800){
@@ -250,26 +230,17 @@ static int vexriscv_get_core_reg(struct reg *reg)
 			vexriscv_pushInstruction(target, false, 0x17); //AUIPC x0,0
 			vexriscv_readInstructionResult(target, true, (uint32_t*)reg->value);
 		}else if (vexriscv_reg->is_csr) {
-			uint32_t previous_x1;
-			// Save x1, which we'll use to buffer the CSR
-			vexriscv_pushInstruction(target, false, 0x13 | (1 << 15)); //ADDI x0, x1, 0
-			vexriscv_readInstructionResult(target, false, &previous_x1);
-
-
 			// Perform a CSRRW which does a Read/Write.  If rs1 is $x0, then the write
 			// is ignored and side-effect free.  Set rd to $x1 to make the read 
 			// not side-effect free.
 			vexriscv_pushInstruction(target, false, 0
-				| (vexriscv_reg->csr_num << 20)
+				| ((vexriscv_reg->csr_num & 0x1fff) << 20)
 				| (0 << 15)	// rs1: x0
-				| (0x1 << 12)	// CSRRW
+				| (2 << 12)	// CSRRW
 				| (1 << 7)	// rd: x1
 				| (0x73 << 0)	// SYSTEM
-				);
-			vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
-
-			// Save the old x1 back to the regfile.
-			vexriscv_write_regfile(target, true, 1, previous_x1);
+			);
+			vexriscv_readInstructionResult(target, false, (uint32_t *)(reg->value));
 		}
 		else {
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
@@ -301,26 +272,27 @@ static int vexriscv_set_core_reg(struct reg *reg, uint8_t *buf)
 	buf_set_u32(reg->value, 0, 32, value);
 
 	if (vexriscv_reg->is_csr) {
-		uint32_t previous_x1;
-		// Save x1, which we'll use to buffer the CSR
-		vexriscv_pushInstruction(target, false, 0x13 | (1 << 15)); //ADDI x0, x1, 0
-		vexriscv_readInstructionResult(target, false, &previous_x1);
-
-
 		// Perform a CSRRW which does a Read/Write.  If rd is $x0, then the read
 		// is ignored and side-effect free.  Set rs1 to $x1 to make the write 
 		// not side-effect free.
+		// 
+		// cccc cccc cccc ssss s fff ddddd ooooooo
+		// c: CSR number
+		// s: rs1 (source register)
+		// f: Function
+		// d: rd (destination register)
+		// o: opcode - 0x73
+
 		vexriscv_write_regfile(target, false, 1, *(uint32_t *)reg->value);
 		vexriscv_pushInstruction(target, false, 0
-			| (vexriscv_reg->csr_num << 20)
+			| ((vexriscv_reg->csr_num & 0x1fff) << 20)
 			| (1 << 15)	// rs1: x1
-			| (0x1 << 12)	// CSRRW
+			| (1 << 12)	// CSRRW
 			| (0 << 7)	// rd: x0
 			| (0x73 << 0)	// SYSTEM
-			);
-
-		// Save the old x1 back to the regfile.
-		vexriscv_write_regfile(target, true, 1, previous_x1);
+		);
+		reg->dirty = 0;
+		reg->valid = 1;
 	}
 	else {
 		reg->dirty = 1;
@@ -342,8 +314,6 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 	struct reg *reg_list = calloc(vexriscv->nb_regs, sizeof(struct reg));
 	struct vexriscv_core_reg *arch_info =
 		malloc((vexriscv->nb_regs) * sizeof(struct vexriscv_core_reg));
-
-
 
 	LOG_DEBUG("-");
 
@@ -372,7 +342,11 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 		reg_list[i].type = &vexriscv_reg_type;
 		reg_list[i].arch_info = &arch_info[i];
 		reg_list[i].number = i;
-		reg_list[i].exist = true;
+
+		if ((i <= 32) || (vexriscv_core_reg_list_arch_info[i].is_csr))
+			reg_list[i].exist = true;
+		else
+			reg_list[i].exist = false;
 	}
 
 	return cache;
@@ -635,6 +609,12 @@ static int vexriscv_save_context(struct target *target)
 		vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
+	}
+
+	// Mark all CSRs as "invalid"
+	for (uint32_t regId = 65; regId < vexriscv->nb_regs; regId++) {
+		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
+		reg->valid = 0;
 	}
 
 	//Flush commands
@@ -1230,17 +1210,18 @@ static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_lis
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	LOG_DEBUG("vexriscv_get_gdb_reg_list %d\n",reg_class);
 	if (reg_class == REG_CLASS_GENERAL) {
-		*reg_list_size = vexriscv->nb_regs;
+		*reg_list_size = sizeof(struct vexriscv_reg_mapping) / sizeof(struct reg);
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 
-		for (uint32_t i = 0; i < vexriscv->nb_regs; i++)
+		for (int i = 0; i < *reg_list_size; i++)
 			(*reg_list)[i] = &vexriscv->core_cache->reg_list[i];
-	} else {
+	} else if (reg_class == REG_CLASS_ALL) {
 		*reg_list_size = vexriscv->nb_regs;
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
-		
-		for (uint32_t i = 0; i < vexriscv->nb_regs; i++)
+		for (int i = 0; i < *reg_list_size; i++)
 			(*reg_list)[i] = &vexriscv->core_cache->reg_list[i];
+	} else {
+		LOG_ERROR("Unsupported reg_class: %d", reg_class);
 	}
 
 	return ERROR_OK;
