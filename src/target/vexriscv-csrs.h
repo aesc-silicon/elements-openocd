@@ -324,14 +324,6 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .versions = "1.9-",
 },
 {
-    .name = "ubadaddr",
-    .csr_num = 0x043,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "User bad address",
-    .versions = "1.7-1.9.1",
-},
-{
     .name = "utval",
     .csr_num = 0x043,
     .inHaltOnly = FALSE,
@@ -419,6 +411,8 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Upper 32 bits of instret, RV32I only",
     .versions = "1.7-,rv32",
 },
+
+/*
 {
     .name = "sstatus",
     .csr_num = 0x100,
@@ -492,14 +486,6 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .versions = "1.7-",
 },
 {
-    .name = "sbadaddr",
-    .csr_num = 0x143,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Supervisor bad address",
-    .versions = "1.7-1.9.1",
-},
-{
     .name = "stval",
     .csr_num = 0x143,
     .inHaltOnly = FALSE,
@@ -531,6 +517,10 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Supervisor address translation and protection",
     .versions = "1.10-",
 },
+*/
+
+
+/*
 {
     .name = "scycle",
     .csr_num = 0xD00,
@@ -579,134 +569,10 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Upper 32 bits of sinstret, RV32I only",
     .versions = "1.9-,rv32",
 },
-{
-    .name = "hstatus",
-    .csr_num = 0x200,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor status register",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hedeleg",
-    .csr_num = 0x202,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor exception delegation register",
-    .versions = "1.9-1.9.1",
-},
-{
-    .name = "hideleg",
-    .csr_num = 0x203,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor interrupt delegation register",
-    .versions = "1.9-1.9.1",
-},
-{
-    .name = "hie",
-    .csr_num = 0x204,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor interrupt-enable register",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "htvec",
-    .csr_num = 0x205,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor trap handler base address",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hscratch",
-    .csr_num = 0x240,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Scratch register for hypervisor trap handlers",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hepc",
-    .csr_num = 0x241,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor exception program counter",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hcause",
-    .csr_num = 0x242,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor trap cause",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hbadaddr",
-    .csr_num = 0x243,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor bad address",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hip",
-    .csr_num = 0x244,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor interrupt pending",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "hcycle",
-    .csr_num = 0xE00,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor cycle counter",
-    .versions = "1.7-1.9.1",
-},
-{
-    .name = "htime",
-    .csr_num = 0xE01,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor wall-clock time",
-    .versions = "1.7-1.9",
-},
-{
-    .name = "hinstret",
-    .csr_num = 0xE02,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor instructions-retired counter",
-    .versions = "1.9-1.9.1",
-},
-{
-    .name = "hcycleh",
-    .csr_num = 0xE80,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Upper 32 bits of hcycle, RV32I only",
-    .versions = "1.7-1.9.1,rv32",
-},
-{
-    .name = "htimeh",
-    .csr_num = 0xE81,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Upper 32 bits of htime, RV32I only",
-    .versions = "1.7-1.9,rv32",
-},
-{
-    .name = "hinstreth",
-    .csr_num = 0xE82,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Upper 32 bits of hinstret, RV32I only",
-    .versions = "1.9-1.9.1,rv32",
-},
+*/
+
+
+
 {
     .name = "mvendorid",
     .csr_num = 0xF11,
@@ -739,6 +605,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Hardware thread ID",
     .versions = "1.7-",
 },
+
+
+
 {
     .name = "mstatus",
     .csr_num = 0x300,
@@ -820,14 +689,6 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .versions = "1.7-",
 },
 {
-    .name = "mbadaddr",
-    .csr_num = 0x343,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Machine bad address",
-    .versions = "1.7-1.9.1",
-},
-{
     .name = "mtval",
     .csr_num = 0x343,
     .inHaltOnly = FALSE,
@@ -843,6 +704,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Machine interrupt pending",
     .versions = "1.7-",
 },
+
+
+/*
 {
     .name = "pmpcfg0",
     .csr_num = 0x3A0,
@@ -1003,6 +867,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Physical memory protection address register",
     .versions = "1.10-",
 },
+*/
+
+/*
 {
     .name = "mbase",
     .csr_num = 0x380,
@@ -1051,6 +918,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Data bound register",
     .versions = "1.7-",
 },
+*/
+
+/*
 {
     .name = "mcycle",
     .csr_num = 0xB00,
@@ -1058,14 +928,6 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .is_csr = TRUE,
     .description = "Machine cycle counter",
     .versions = "1.7-",
-},
-{
-    .name = "mtime",
-    .csr_num = 0xB01,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Machine wall-clock time",
-    .versions = "1.7-1.9",
 },
 {
     .name = "minstret",
@@ -1307,6 +1169,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Machine performance-monitoring counter",
     .versions = "1.9.1-",
 },
+*/
+
+/*
 {
     .name = "mcycleh",
     .csr_num = 0xB80,
@@ -1314,14 +1179,6 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .is_csr = TRUE,
     .description = "Upper 32 bits of mcycle, RV32I only",
     .versions = "1.7-,rv32",
-},
-{
-    .name = "mtimeh",
-    .csr_num = 0xB81,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Upper 32 bits of mtime, RV32I only",
-    .versions = "1.7-1.9,rv32",
 },
 {
     .name = "minstreth",
@@ -1563,30 +1420,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Upper 32 bits of mhpmcounter31, RV32I only",
     .versions = "1.9.1-",
 },
-{
-    .name = "mucounteren",
-    .csr_num = 0x320,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Machine interrupt-enable register",
-    .versions = "1.9-1.9.1",
-},
-{
-    .name = "mscounteren",
-    .csr_num = 0x321,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Supervisor-mode counter enable",
-    .versions = "1.9-1.9.1",
-},
-{
-    .name = "mhcounteren",
-    .csr_num = 0x322,
-    .inHaltOnly = FALSE,
-    .is_csr = TRUE,
-    .description = "Hypervisor-mode counter enable",
-    .versions = "1.9-1.9.1",
-},
+*/
+
+/*
 {
     .name = "mhpmevent3",
     .csr_num = 0x323,
@@ -1819,6 +1655,9 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Machine performance-monitoring event selector",
     .versions = "1.9.1-",
 },
+*/
+
+/*
 {
     .name = "tselect",
     .csr_num = 0x7A0,
@@ -1875,6 +1714,8 @@ const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
     .description = "Debug scratch register",
     .versions = "1.9.1-",
 },
+*/
+
 {
     .name = "mtohost",
     .csr_num = 0x780,
