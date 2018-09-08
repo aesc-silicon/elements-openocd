@@ -53,8 +53,8 @@ struct vexriscv_common {
 	struct jtag_tap *tap;
 	struct reg_cache *core_cache;
 	struct vexriscv_reg_mapping *regs;
-	//uint32_t core_regs[vexriscv_NUM_CORE_REGS];
 	uint32_t nb_regs;
+	uint32_t largest_csr;
 	struct vexriscv_core_reg *arch_info;
 	uint32_t dbgBase;
 	int clientSocket;
@@ -62,7 +62,6 @@ struct vexriscv_common {
 	uint32_t readWaitCycles;
 	char* cpuConfigFile;
 	enum network_protocol networkProtocol;
-	//uint32_t flags;
 	struct BusInfo* iBus, *dBus;
 };
 
@@ -75,60 +74,17 @@ target_to_vexriscv(struct target *target)
 struct vexriscv_core_reg {
 	const char *name;
 	uint32_t list_num;   /* Index in register cache */
-	uint32_t spr_num;    /* Number in architecture's SPR space */
+	uint32_t csr_num;    /* Number in architecture's SPR space */
+	uint32_t is_csr;     /* False for x0, x1, etc. */
 	uint32_t inHaltOnly;
 	struct target *target;
 	struct vexriscv_common *vexriscv_common;
 };
 
 
-struct vexriscv_core_reg_init {
-	const char *name;
-	uint32_t spr_num;    /* Number in architecture's SPR space */
-	uint32_t inHaltOnly;
-};
-
-
 static struct vexriscv_core_reg *vexriscv_core_reg_list_arch_info;
 
-/*
-enum vexriscv_reg_nums {
-	vexriscv_REG_R0 = 0,
-	vexriscv_REG_R1,
-	vexriscv_REG_R2,
-	vexriscv_REG_R3,
-	vexriscv_REG_R4,
-	vexriscv_REG_R5,
-	vexriscv_REG_R6,
-	vexriscv_REG_R7,
-	vexriscv_REG_R8,
-	vexriscv_REG_R9,
-	vexriscv_REG_R10,
-	vexriscv_REG_R11,
-	vexriscv_REG_R12,
-	vexriscv_REG_R13,
-	vexriscv_REG_R14,
-	vexriscv_REG_R15,
-	vexriscv_REG_R16,
-	vexriscv_REG_R17,
-	vexriscv_REG_R18,
-	vexriscv_REG_R19,
-	vexriscv_REG_R20,
-	vexriscv_REG_R21,
-	vexriscv_REG_R22,
-	vexriscv_REG_R23,
-	vexriscv_REG_R24,
-	vexriscv_REG_R25,
-	vexriscv_REG_R26,
-	vexriscv_REG_R27,
-	vexriscv_REG_R28,
-	vexriscv_REG_R29,
-	vexriscv_REG_R30,
-	vexriscv_REG_R31,
-	vexriscv_REG_PC
-};*/
-
-struct vexriscv_reg_mapping{
+struct vexriscv_reg_mapping {
 	struct reg x0;
 	struct reg x1;
 	struct reg x2;
@@ -164,162 +120,48 @@ struct vexriscv_reg_mapping{
 	struct reg pc;
 };
 
-static const struct vexriscv_core_reg_init vexriscv_init_reg_list[] = {
-	{"x0"    	  , 0   + 0*4, FALSE},
-	{"x1"	      , 0   + 1*4, FALSE},
-	{"x2"	      , 0   + 2*4, FALSE},
-	{"x3"	      , 0   + 3*4, FALSE},
-	{"x4"	      , 0   + 4*4, FALSE},
-	{"x5"	      , 0   + 5*4, FALSE},
-	{"x6"	      , 0   + 6*4, FALSE},
-	{"x7"	      , 0   + 7*4, FALSE},
-	{"x8"	      , 0   + 8*4, FALSE},
-	{"x9"	      , 0   + 9*4, FALSE},
-	{"x10"	      , 0   + 10*4, FALSE},
-	{"x11"	      , 0   + 11*4, FALSE},
-	{"x12"	      , 0   + 12*4, FALSE},
-	{"x13"	      , 0   + 13*4, FALSE},
-	{"x14"	      , 0   + 14*4, FALSE},
-	{"x15"	      , 0   + 15*4, FALSE},
-	{"x16"	      , 0   + 16*4, FALSE},
-	{"x17"	      , 0   + 17*4, FALSE},
-	{"x18"	      , 0   + 18*4, FALSE},
-	{"x19"	      , 0   + 19*4, FALSE},
-	{"x20"	      , 0   + 20*4, FALSE},
-	{"x21"	      , 0   + 21*4, FALSE},
-	{"x22"	      , 0   + 22*4, FALSE},
-	{"x23"	      , 0   + 23*4, FALSE},
-	{"x24"	      , 0   + 24*4, FALSE},
-	{"x25"	      , 0   + 25*4, FALSE},
-	{"x26"	      , 0   + 26*4, FALSE},
-	{"x27"	      , 0   + 27*4, FALSE},
-	{"x28"	      , 0   + 28*4, FALSE},
-	{"x29"	      , 0   + 29*4, FALSE},
-	{"x30"	      , 0   + 30*4, FALSE},
-	{"x31"	      , 0   + 31*4, FALSE},
-	{"pc"       , 512 + 1*4, FALSE},
-	{"ft0"	    , 0   + 0*4, FALSE},
-	{"ft1"	    , 0   + 0*4, FALSE},
-	{"ft2"	    , 0   + 0*4, FALSE},
-	{"ft3"	    , 0   + 0*4, FALSE},
-	{"ft4"	    , 0   + 0*4, FALSE},
-	{"ft5"	    , 0   + 0*4, FALSE},
-	{"ft6"	    , 0   + 0*4, FALSE},
-	{"ft7"	    , 0   + 0*4, FALSE},
-	{"fs0"	    , 0   + 0*4, FALSE},
-	{"fs1"	    , 0   + 0*4, FALSE},
-	{"fa0"	    , 0   + 0*4, FALSE},
-	{"fa1"	    , 0   + 0*4, FALSE},
-	{"fa2"	    , 0   + 0*4, FALSE},
-	{"fa3"	    , 0   + 0*4, FALSE},
-	{"fa4"	    , 0   + 0*4, FALSE},
-	{"fa5"	    , 0   + 0*4, FALSE},
-	{"fa6"	    , 0   + 0*4, FALSE},
-	{"fa7"	    , 0   + 0*4, FALSE},
-	{"fs2"	    , 0   + 0*4, FALSE},
-	{"fs3"	    , 0   + 0*4, FALSE},
-	{"fs4"	    , 0   + 0*4, FALSE},
-	{"fs5"	    , 0   + 0*4, FALSE},
-	{"fs6"	    , 0   + 0*4, FALSE},
-	{"fs7"	    , 0   + 0*4, FALSE},
-	{"fs8"	    , 0   + 0*4, FALSE},
-	{"fs9"	    , 0   + 0*4, FALSE},
-	{"fs10"	    , 0   + 0*4, FALSE},
-	{"fs11"	    , 0   + 0*4, FALSE},
-	{"ft8"	    , 0   + 0*4, FALSE},
-	{"ft9"	    , 0   + 0*4, FALSE},
-	{"ft10"	    , 0   + 0*4, FALSE},
-	{"ft11"	    , 0   + 0*4, FALSE},
-	{"fflags"	, 0   + 0*4, FALSE},
-	{"frm"		, 0   + 0*4, FALSE},
-	{"fcsr"		, 0   + 0*4, FALSE},
-	{"cycle"		, 0   + 0*4, FALSE},
-	{"time"		, 0   + 0*4, FALSE},
-	{"instret"	, 0   + 0*4, FALSE},
-	{"stats"		, 0   + 0*4, FALSE},
-	{"uarch0"	, 0   + 0*4, FALSE},
-	{"uarch1"	, 0   + 0*4, FALSE},
-	{"uarch2"	, 0   + 0*4, FALSE},
-	{"uarch3"	, 0   + 0*4, FALSE},
-	{"uarch4"	, 0   + 0*4, FALSE},
-	{"uarch5"	, 0   + 0*4, FALSE},
-	{"uarch6"	, 0   + 0*4, FALSE},
-	{"uarch7"	, 0   + 0*4, FALSE},
-	{"uarch8"	, 0   + 0*4, FALSE},
-	{"uarch9"	, 0   + 0*4, FALSE},
-	{"uarch10"	, 0   + 0*4, FALSE},
-	{"uarch11"	, 0   + 0*4, FALSE},
-	{"uarch12"	, 0   + 0*4, FALSE},
-	{"uarch13"	, 0   + 0*4, FALSE},
-	{"uarch14"	, 0   + 0*4, FALSE},
-	{"uarch15"	, 0   + 0*4, FALSE},
-	{"sstatus"	, 0   + 0*4, FALSE},
-	{"stvec"		, 0   + 0*4, FALSE},
-	{"sie"		, 0   + 0*4, FALSE},
-	{"stimecmp"	, 0   + 0*4, FALSE},
-	{"sscratch"	, 0   + 0*4, FALSE},
-	{"sepc"		, 0   + 0*4, FALSE},
-	{"sip"		, 0   + 0*4, FALSE},
-	{"sptbr"		, 0   + 0*4, FALSE},
-	{"sasid"		, 0   + 0*4, FALSE},
-	{"cyclew"	, 0   + 0*4, FALSE},
-	{"timew"		, 0   + 0*4, FALSE},
-	{"instretw"	, 0   + 0*4, FALSE},
-	{"stime"		, 0   + 0*4, FALSE},
-	{"scause"	, 0   + 0*4, FALSE},
-	{"sbadaddr"	, 0   + 0*4, FALSE},
-	{"stimew"	, 0   + 0*4, FALSE},
-	{"mstatus"	, 0   + 0*4, FALSE},
-	{"mtvec"		, 0   + 0*4, FALSE},
-	{"mtdeleg"	, 0   + 0*4, FALSE},
-	{"mie"		, 0   + 0*4, FALSE},
-	{"mtimecmp"	, 0   + 0*4, FALSE},
-	{"mscratch"	, 0   + 0*4, FALSE},
-	{"mepc"		, 0   + 0*4, FALSE},
-	{"mcause"	, 0   + 0*4, FALSE},
-	{"mbadaddr"	, 0   + 0*4, FALSE},
-	{"mip"		, 0   + 0*4, FALSE},
-	{"mtime"		, 0   + 0*4, FALSE},
-	{"mcpuid"	, 0   + 0*4, FALSE},
-	{"mimpid"	, 0   + 0*4, FALSE},
-	{"mhartid"	, 0   + 0*4, FALSE},
-	{"mtohost"	, 0   + 0*4, FALSE},
-	{"mfromhost"	, 0   + 0*4, FALSE},
-	{"mreset"	, 0   + 0*4, FALSE},
-	{"send_ipi"	, 0   + 0*4, FALSE},
-	{"cycleh"	, 0   + 0*4, FALSE},
-	{"timeh"		, 0   + 0*4, FALSE},
-	{"instreth"	, 0   + 0*4, FALSE},
-	{"cyclehw"	, 0   + 0*4, FALSE},
-	{"timehw"	, 0   + 0*4, FALSE},
-	{"instrethw", 0   + 0*4, FALSE},
-	{"stimeh"	, 0   + 0*4, FALSE},
-	{"stimehw"	, 0   + 0*4, FALSE},
-	{"mtimeh"	, 0   + 0*4, FALSE}
-
-
-};
+#include "vexriscv-csrs.h"
 
 
 static int vexriscv_create_reg_list(struct target *target)
 {
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv->largest_csr = 0;
 
-	LOG_DEBUG("-");		
+	unsigned int i;
 
-	vexriscv_core_reg_list_arch_info = malloc(ARRAY_SIZE(vexriscv_init_reg_list) *
+	// GDB CSR numbers are offset by 65.  That is, Risc-V CSR0 is
+	// GDB register number 65.
+	for (i = 0; i < ARRAY_SIZE(vexriscv_init_reg_list); i++)
+		if (vexriscv_init_reg_list[i].is_csr && (vexriscv_init_reg_list[i].csr_num > vexriscv->largest_csr))
+			vexriscv->largest_csr = vexriscv_init_reg_list[i].csr_num;
+	vexriscv->largest_csr += 65;
+
+	vexriscv_core_reg_list_arch_info = malloc(vexriscv->largest_csr *
+				       sizeof(struct vexriscv_core_reg));
+	memset(vexriscv_core_reg_list_arch_info, 0, vexriscv->largest_csr *
 				       sizeof(struct vexriscv_core_reg));
 
-	for (int i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
-		vexriscv_core_reg_list_arch_info[i].name = vexriscv_init_reg_list[i].name;
-		vexriscv_core_reg_list_arch_info[i].spr_num = vexriscv_init_reg_list[i].spr_num;
-		vexriscv_core_reg_list_arch_info[i].inHaltOnly = vexriscv_init_reg_list[i].inHaltOnly;
-		vexriscv_core_reg_list_arch_info[i].list_num = i;
-		vexriscv_core_reg_list_arch_info[i].target = NULL;
-		vexriscv_core_reg_list_arch_info[i].vexriscv_common = NULL;
+	for (i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
+		int gdb_reg_num = i;
+
+		// Offset the CSR register numbers by 65 in the array.
+		if (vexriscv_init_reg_list[i].is_csr)
+			gdb_reg_num = 65 + vexriscv_init_reg_list[i].csr_num;
+
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].name = vexriscv_init_reg_list[i].name;
+
+		// csr_num is the value that's used for instruction encoding.
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].csr_num = vexriscv_init_reg_list[i].csr_num;
+
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].is_csr = vexriscv_init_reg_list[i].is_csr;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].inHaltOnly = vexriscv_init_reg_list[i].inHaltOnly;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].list_num = i;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].target = NULL;
+		vexriscv_core_reg_list_arch_info[gdb_reg_num].vexriscv_common = NULL;
 	}
 
-	vexriscv->nb_regs = ARRAY_SIZE(vexriscv_init_reg_list);
+	vexriscv->nb_regs = vexriscv->largest_csr;
 
 
 	return ERROR_OK;
@@ -353,6 +195,7 @@ static int vexriscv_execute_jtag_queue(struct target *target) {
 }
 
 int vexriscv_write_regfile(struct target* target, bool execute,uint32_t regId,uint32_t value){
+	assert(regId <= 32);
 	if(value & 0xFFFFF800){ //Require LUI
 		uint32_t high = value & 0xFFFFF000, low = value & 0x00000FFF;
 		if(low & 0x800){
@@ -380,13 +223,26 @@ static int vexriscv_get_core_reg(struct reg *reg)
 	if (vexriscv_reg->inHaltOnly && target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
-	if(!reg->valid){
+	if (!reg->valid) {
 		if(reg->number < 32){
 			return ERROR_FAIL;
 		}else if(reg->number == 32){
 			vexriscv_pushInstruction(target, false, 0x17); //AUIPC x0,0
 			vexriscv_readInstructionResult(target, true, (uint32_t*)reg->value);
-		}else{
+		}else if (vexriscv_reg->is_csr) {
+			// Perform a CSRRW which does a Read/Write.  If rs1 is $x0, then the write
+			// is ignored and side-effect free.  Set rd to $x1 to make the read 
+			// not side-effect free.
+			vexriscv_pushInstruction(target, false, 0
+				| ((vexriscv_reg->csr_num & 0x1fff) << 20)
+				| (0 << 15)	// rs1: x0
+				| (2 << 12)	// CSRRW
+				| (1 << 7)	// rd: x1
+				| (0x73 << 0)	// SYSTEM
+			);
+			vexriscv_readInstructionResult(target, false, (uint32_t *)(reg->value));
+		}
+		else {
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
 		}
 
@@ -413,9 +269,35 @@ static int vexriscv_set_core_reg(struct reg *reg, uint8_t *buf)
 		return ERROR_FAIL;
 	}
 
-	reg->dirty = 1;
-	reg->valid = 1;
 	buf_set_u32(reg->value, 0, 32, value);
+
+	if (vexriscv_reg->is_csr) {
+		// Perform a CSRRW which does a Read/Write.  If rd is $x0, then the read
+		// is ignored and side-effect free.  Set rs1 to $x1 to make the write 
+		// not side-effect free.
+		// 
+		// cccc cccc cccc ssss s fff ddddd ooooooo
+		// c: CSR number
+		// s: rs1 (source register)
+		// f: Function
+		// d: rd (destination register)
+		// o: opcode - 0x73
+
+		vexriscv_write_regfile(target, false, 1, *(uint32_t *)reg->value);
+		vexriscv_pushInstruction(target, false, 0
+			| ((vexriscv_reg->csr_num & 0x1fff) << 20)
+			| (1 << 15)	// rs1: x1
+			| (1 << 12)	// CSRRW
+			| (0 << 7)	// rd: x0
+			| (0x73 << 0)	// SYSTEM
+		);
+		reg->dirty = 0;
+		reg->valid = 1;
+	}
+	else {
+		reg->dirty = 1;
+		reg->valid = 1;
+	}
 	return ERROR_OK;
 }
 
@@ -432,8 +314,6 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 	struct reg *reg_list = calloc(vexriscv->nb_regs, sizeof(struct reg));
 	struct vexriscv_core_reg *arch_info =
 		malloc((vexriscv->nb_regs) * sizeof(struct vexriscv_core_reg));
-
-
 
 	LOG_DEBUG("-");
 
@@ -462,7 +342,11 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 		reg_list[i].type = &vexriscv_reg_type;
 		reg_list[i].arch_info = &arch_info[i];
 		reg_list[i].number = i;
-		reg_list[i].exist = true;
+
+		if ((i <= 32) || (vexriscv_core_reg_list_arch_info[i].is_csr))
+			reg_list[i].exist = true;
+		else
+			reg_list[i].exist = false;
 	}
 
 	return cache;
@@ -725,6 +609,12 @@ static int vexriscv_save_context(struct target *target)
 		vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
+	}
+
+	// Mark all CSRs as "invalid"
+	for (uint32_t regId = 65; regId < vexriscv->nb_regs; regId++) {
+		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
+		reg->valid = 0;
 	}
 
 	//Flush commands
@@ -1320,17 +1210,18 @@ static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_lis
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	LOG_DEBUG("vexriscv_get_gdb_reg_list %d\n",reg_class);
 	if (reg_class == REG_CLASS_GENERAL) {
-		*reg_list_size = vexriscv->nb_regs;
+		*reg_list_size = sizeof(struct vexriscv_reg_mapping) / sizeof(struct reg);
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 
-		for (uint32_t i = 0; i < vexriscv->nb_regs; i++)
+		for (int i = 0; i < *reg_list_size; i++)
 			(*reg_list)[i] = &vexriscv->core_cache->reg_list[i];
-	} else {
+	} else if (reg_class == REG_CLASS_ALL) {
 		*reg_list_size = vexriscv->nb_regs;
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
-		
-		for (uint32_t i = 0; i < vexriscv->nb_regs; i++)
+		for (int i = 0; i < *reg_list_size; i++)
 			(*reg_list)[i] = &vexriscv->core_cache->reg_list[i];
+	} else {
+		LOG_ERROR("Unsupported reg_class: %d", reg_class);
 	}
 
 	return ERROR_OK;
