@@ -23,6 +23,7 @@
 #include <netinet/tcp.h>
 #include <yaml.h>
 #include <errno.h>
+#include "algorithm.h"
 
 #define vexriscv_FLAGS_RESET 1<<0
 #define vexriscv_FLAGS_HALT 1<<1
@@ -627,7 +628,11 @@ static int vexriscv_save_context(struct target *target)
 	return ERROR_OK;
 }
 
-
+static void vexriscv_cpu_write_pc(struct target *target, bool execute, uint32_t value){
+	vexriscv_write_regfile(target, false, 1,value);
+	vexriscv_pushInstruction(target, false, 0x67 | (1 << 15)); //JALR x1
+	if(execute) jtag_execute_queue();
+}
 
 static int vexriscv_restore_context(struct target *target)
 {
@@ -636,9 +641,7 @@ static int vexriscv_restore_context(struct target *target)
 
 	//PC
 	if(vexriscv->regs->pc.valid){
-		vexriscv_write_regfile(target, false, 1,*((uint32_t*)vexriscv->regs->pc.value));
-		vexriscv_pushInstruction(target, false, 0x67 | (1 << 15)); //JALR x1
-
+		vexriscv_cpu_write_pc(target, false, *((uint32_t*)vexriscv->regs->pc.value));
 		vexriscv->regs->pc.valid = false;
 		vexriscv->regs->pc.dirty = false;
 	}
@@ -1530,6 +1533,105 @@ static int vexriscv_remove_watchpoint(struct target *target,
 	return ERROR_OK;
 }
 
+/* run to exit point. return error if exit point was not reached. */
+static int vexriscv_run_and_wait(struct target *target, target_addr_t entry_point, int timeout_ms)
+{
+	int retval;
+	//struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_cpu_write_pc(target, false, entry_point);
+
+	/* Unstall */
+	if ((retval = vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_CLEAR)) != ERROR_OK) {
+		LOG_ERROR("Error while unstalling the CPU");
+		return retval;
+	}
+
+
+
+	retval = target_wait_state(target, TARGET_HALTED, timeout_ms);
+	/* If the target fails to halt due to the breakpoint, force a halt */
+	if (retval != ERROR_OK || target->state != TARGET_HALTED) {
+		retval = target_halt(target);
+		if (retval != ERROR_OK)
+			return retval;
+		retval = target_wait_state(target, TARGET_HALTED, 500);
+		if (retval != ERROR_OK)
+			return retval;
+		return ERROR_TARGET_TIMEOUT;
+	}
+
+	/*pc = buf_get_u32(vexriscv->regs.value, 0, 32);
+	if (exit_point && (pc != exit_point)) {
+		LOG_DEBUG("failed algorithm halted at 0x%" PRIx32 " ", pc);
+		return ERROR_TARGET_TIMEOUT;
+	}*/
+
+	return ERROR_OK;
+}
+
+
+
+int vexriscv_run_algorithm(struct target *target, int num_mem_params,
+			struct mem_param *mem_params, int num_reg_params,
+			struct reg_param *reg_params, target_addr_t entry_point,
+			target_addr_t exit_point, int timeout_ms, void *arch_info){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	int retval;
+	LOG_DEBUG("Running algorithm");
+
+	if (target->state != TARGET_HALTED) {
+		LOG_WARNING("target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+
+	for (unsigned int i = 0; i < 33; i++) {
+		vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[i]);
+		vexriscv->core_cache->reg_list[i].dirty = 1;
+	}
+
+	for (int i = 0; i < num_mem_params; i++) {
+		if (mem_params[i].direction != PARAM_IN) {
+			retval = target_write_buffer(target, mem_params[i].address, mem_params[i].size, mem_params[i].value);
+			if (retval != ERROR_OK)
+				return retval;
+		}
+	}
+
+	for (int i = 0; i < num_reg_params; i++) {
+		struct reg *reg = register_get_by_name(vexriscv->core_cache, reg_params[i].reg_name, 0);
+
+		if (!reg) {
+			LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
+			return ERROR_COMMAND_SYNTAX_ERROR;
+		}
+
+		if (reg->size != reg_params[i].size) {
+			LOG_ERROR("BUG: register '%s' size doesn't match reg_params[i].size",
+					reg_params[i].reg_name);
+			return ERROR_COMMAND_SYNTAX_ERROR;
+		}
+
+
+		vexriscv_write_regfile(target, false, reg->number, *(uint32_t*) reg_params[i].value);
+	}
+
+
+	retval = vexriscv_run_and_wait(target, entry_point, timeout_ms);
+
+	if (retval != ERROR_OK)
+		return retval;
+
+	for (int i = 0; i < num_mem_params; i++) {
+		if (mem_params[i].direction != PARAM_OUT) {
+			retval = target_read_buffer(target, mem_params[i].address, mem_params[i].size,
+					mem_params[i].value);
+			if (retval != ERROR_OK)
+				return retval;
+		}
+	}
+
+	return ERROR_OK;
+}
 
 COMMAND_HANDLER(vexriscv_handle_readWaitCycles_command)
 {
@@ -1629,4 +1731,5 @@ struct target_type vexriscv_target = {
 
 	.read_memory = vexriscv_read_memory,
 	.write_memory = vexriscv_write_memory,
+	.run_algorithm = vexriscv_run_algorithm
 };

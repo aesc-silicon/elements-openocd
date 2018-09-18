@@ -29,6 +29,7 @@ NOR_DRIVERS = \
 	%D%/kinetis.c \
 	%D%/kinetis_ke.c \
 	%D%/lpc2000.c \
+	%D%/vexriscv_nor_spi.c \
 	%D%/lpc288x.c \
 	%D%/lpc2900.c \
 	%D%/lpcspifi.c \
