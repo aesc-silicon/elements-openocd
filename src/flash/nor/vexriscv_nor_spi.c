@@ -58,6 +58,8 @@ static int get_vexriscv_nor_spi_info(struct flash_bank *bank, char *buf, int buf
 #define CTRL_SS_SETUP 0x24
 #define CTRL_SS_HOLD 0x28
 #define CTRL_SS_DISABLE 0x2C
+#define CTRL_XIP_CONFIG 0x40
+#define CTRL_XIP_MODE 0x44
 
 
 static uint32_t vexriscv_nor_spi_readCtrlU32(struct flash_bank *bank, uint32_t addr)
@@ -206,6 +208,7 @@ static void vexriscv_nor_spi_spiWriteVolatileConfig(struct flash_bank *bank, uin
 
 static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 {
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_XIP_CONFIG, 0x0);
 	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_MODE, 0x0);
 	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_RATE, 0x2);
 	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_SETUP, 0x4);
@@ -238,7 +241,7 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 	printf("%x\n",vexriscv_nor_spi_spiReadVConfig(bank));
 
 
-
+	bank->size = 0;
 	bank->num_sectors = 64;
 	uint32_t offset = 0;
 	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
@@ -248,6 +251,7 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 		offset += bank->sectors[i].size;
 		bank->sectors[i].is_erased = -1;
 		bank->sectors[i].is_protected = vexriscv_nor_spi_spiReadLock(bank, offset);
+		bank->size += bank->sectors[i].size;
 	}
 
 
