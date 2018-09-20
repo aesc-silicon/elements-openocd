@@ -123,17 +123,7 @@ static uint8_t vexriscv_nor_spi_spiReadStatus(struct flash_bank *bank)
 	return vexriscv_nor_spi_spiReadRegister(bank, 0x05);
 }
 
-static uint8_t vexriscv_nor_spi_spiReadLock(struct flash_bank *bank, uint32_t address)
-{
-	vexriscv_nor_spi_spiStart(bank);
-	vexriscv_nor_spi_spiWrite(bank, 0xE8);
-	vexriscv_nor_spi_spiWrite(bank, (address >> 16) & 0xFF);
-	vexriscv_nor_spi_spiWrite(bank, (address >>  8) & 0xFF);
-	vexriscv_nor_spi_spiWrite(bank, (address >>  0) & 0xFF);
-	uint8_t ret = vexriscv_nor_spi_spiRead(bank);
-	vexriscv_nor_spi_spiStop(bank);
-	return ret;
-}
+
 
 static void vexriscv_nor_spi_spiWriteLock(struct flash_bank *bank, uint32_t address, uint8_t value)
 {
@@ -146,6 +136,17 @@ static void vexriscv_nor_spi_spiWriteLock(struct flash_bank *bank, uint32_t addr
 	vexriscv_nor_spi_spiStop(bank);
 }
 
+ static uint8_t vexriscv_nor_spi_spiReadLock(struct flash_bank *bank, uint32_t address)
+{
+	vexriscv_nor_spi_spiStart(bank);
+	vexriscv_nor_spi_spiWrite(bank, 0xE8);
+	vexriscv_nor_spi_spiWrite(bank, (address >> 16) & 0xFF);
+	vexriscv_nor_spi_spiWrite(bank, (address >>  8) & 0xFF);
+	vexriscv_nor_spi_spiWrite(bank, (address >>  0) & 0xFF);
+	uint8_t ret = vexriscv_nor_spi_spiRead(bank);
+	vexriscv_nor_spi_spiStop(bank);
+	return ret;
+}
 static uint8_t vexriscv_nor_spi_spiReadFlag(struct flash_bank *bank)
 {
 	return vexriscv_nor_spi_spiReadRegister(bank, 0x70);
@@ -222,10 +223,12 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 	uint8_t b = vexriscv_nor_spi_spiRead(bank);
 	uint8_t c = vexriscv_nor_spi_spiRead(bank);
 	vexriscv_nor_spi_spiStop(bank);
+	printf("%d %d %d\n", a, b, c);
+
 
 	vexriscv_nor_spi_spiWriteVolatileConfig(bank,0x83);
 
-	printf("%d %d %d\n", a, b, c);
+
 
 	/*
 	0
@@ -250,7 +253,7 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 		bank->sectors[i].size = 64 * 1024;
 		offset += bank->sectors[i].size;
 		bank->sectors[i].is_erased = -1;
-		bank->sectors[i].is_protected = vexriscv_nor_spi_spiReadLock(bank, offset);
+		bank->sectors[i].is_protected = 1;//vexriscv_nor_spi_spiReadLock(bank, offset);
 		bank->size += bank->sectors[i].size;
 	}
 
@@ -273,6 +276,7 @@ FLASH_BANK_COMMAND_HANDLER(vexriscv_nor_spi_flash_bank_command)
 
 
 int  vexriscv_nor_spi_erase(struct flash_bank *bank, int first, int last){
+	LOG_DEBUG("vexriscv_nor_spi_erase %d %d", first, last);
 	for(int sector = first;sector <= last;sector++){
 		uint32_t addr = sector << 16;
 		vexriscv_nor_spi_spiWriteEnable(bank);
@@ -329,7 +333,7 @@ int vexriscv_nor_spi_write(struct flash_bank *bank, const uint8_t *buffer, uint3
 			rp[i].direction = PARAM_OUT;
 		}
 
-		target_run_algorithm(bank->target, 1,mp,4,rp, codeAddress, -1, 100, NULL);
+		target_run_algorithm(bank->target, 1,mp,4,rp, codeAddress, -1, 2000, NULL);
 		buffer += burstSize;
 		offset = offsetNext;
 	}
@@ -366,7 +370,7 @@ int vexriscv_nor_spi_read(struct flash_bank *bank, uint8_t *buffer, uint32_t off
 			rp[i].direction = PARAM_OUT;
 		}
 
-		target_run_algorithm(bank->target, 1,mp,4,rp, codeAddress, -1, 100, NULL);
+		target_run_algorithm(bank->target, 1,mp,4,rp, codeAddress, -1, 2000, NULL);
 		buffer += burstSize;
 		offset = offsetNext;
 	}
