@@ -1523,13 +1523,8 @@ static int vexriscv_step(struct target *target, int current,
 static int vexriscv_examine(struct target *target)
 {
 	LOG_DEBUG("vexriscv_examine");
-	/*struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	struct reg *reg_list = calloc(vexriscv->nb_regs, sizeof(struct reg));
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 
-	for (int i = 0; i < vexriscv->nb_regs; i++) {
-		reg_list[i].dirty = 0;
-		reg_list[i].valid = 0;
-	}*/
 
 
 	if (!target_was_examined(target)) {
@@ -1560,6 +1555,10 @@ static int vexriscv_examine(struct target *target)
 					target->debug_reason = DBG_REASON_DBGRQ;
 
 				target->state = TARGET_HALTED;
+
+				for(int i = 0;i < vexriscv->hardwareBreakpointsCount;i++) {
+					vexriscv_setHardwareBreakpoint(target, true,i,0,0);
+				}
 			}
 		}
 	}
