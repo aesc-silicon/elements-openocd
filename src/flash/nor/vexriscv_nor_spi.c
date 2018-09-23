@@ -40,6 +40,7 @@
 typedef struct  {
 	uint32_t ctrlAddress;
 	uint32_t ramAddress;
+	bool probed;
 } vexriscv_nor_spi_priv;
 
 
@@ -135,8 +136,8 @@ static void vexriscv_nor_spi_spiWriteLock(struct flash_bank *bank, uint32_t addr
 	vexriscv_nor_spi_spiWrite(bank, value);
 	vexriscv_nor_spi_spiStop(bank);
 }
-
- static uint8_t vexriscv_nor_spi_spiReadLock(struct flash_bank *bank, uint32_t address)
+/*
+static uint8_t vexriscv_nor_spi_spiReadLock(struct flash_bank *bank, uint32_t address)
 {
 	vexriscv_nor_spi_spiStart(bank);
 	vexriscv_nor_spi_spiWrite(bank, 0xE8);
@@ -164,7 +165,7 @@ static uint16_t vexriscv_nor_spi_spiReadNvConfig(struct flash_bank *bank)
 static uint8_t vexriscv_nor_spi_spiReadVConfig(struct flash_bank *bank)
 {
 	return vexriscv_nor_spi_spiReadRegister(bank, 0x85);
-}
+}*/
 
 static void vexriscv_nor_spi_spiWaitNotBusy(struct flash_bank *bank){
 	while(vexriscv_nor_spi_spiReadStatus(bank) & 1);
@@ -209,55 +210,41 @@ static void vexriscv_nor_spi_spiWriteVolatileConfig(struct flash_bank *bank, uin
 
 static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 {
-	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_XIP_CONFIG, 0x0);
-	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_MODE, 0x0);
-	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_RATE, 0x2);
-	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_SETUP, 0x4);
-	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_HOLD, 0x4);
-	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_DISABLE, 0x4);
+	if(!priv->probed){
+		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_XIP_CONFIG, 0x0);
+		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_MODE, 0x0);
+		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_RATE, 0x2);
+		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_SETUP, 0x4);
+		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_HOLD, 0x4);
+		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_DISABLE, 0x4);
 
 
-	vexriscv_nor_spi_spiStart(bank);
-	vexriscv_nor_spi_spiWrite(bank, 0x9F);
-	uint8_t a = vexriscv_nor_spi_spiRead(bank);
-	uint8_t b = vexriscv_nor_spi_spiRead(bank);
-	uint8_t c = vexriscv_nor_spi_spiRead(bank);
-	vexriscv_nor_spi_spiStop(bank);
-	printf("%d %d %d\n", a, b, c);
+		vexriscv_nor_spi_spiStart(bank);
+		vexriscv_nor_spi_spiWrite(bank, 0x9F);
+		uint8_t a = vexriscv_nor_spi_spiRead(bank);
+		uint8_t b = vexriscv_nor_spi_spiRead(bank);
+		uint8_t c = vexriscv_nor_spi_spiRead(bank);
+		vexriscv_nor_spi_spiStop(bank);
+		printf("%d %d %d\n", a, b, c);
 
 
-	vexriscv_nor_spi_spiWriteVolatileConfig(bank,0x83);
+		vexriscv_nor_spi_spiWriteVolatileConfig(bank,0x83);
 
 
-
-	/*
-	0
-	ff
-	80
-	ff
-	fb*/
-
-	printf("%x\n",vexriscv_nor_spi_spiReadStatus(bank));
-	printf("%x\n",vexriscv_nor_spi_spiReadLock(bank,0));
-	printf("%x\n",vexriscv_nor_spi_spiReadFlag(bank));
-	printf("%x\n",vexriscv_nor_spi_spiReadNvConfig(bank));
-	printf("%x\n",vexriscv_nor_spi_spiReadVConfig(bank));
-
-
-	bank->size = 0;
-	bank->num_sectors = 64;
-	uint32_t offset = 0;
-	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	for (int i = 0; i < bank->num_sectors; i++) {
-		bank->sectors[i].offset = offset;
-		bank->sectors[i].size = 64 * 1024;
-		offset += bank->sectors[i].size;
-		bank->sectors[i].is_erased = -1;
-		bank->sectors[i].is_protected = 1;//vexriscv_nor_spi_spiReadLock(bank, offset);
-		bank->size += bank->sectors[i].size;
+		bank->size = 0;
+		bank->num_sectors = 64;
+		uint32_t offset = 0;
+		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
+		for (int i = 0; i < bank->num_sectors; i++) {
+			bank->sectors[i].offset = offset;
+			bank->sectors[i].size = 64 * 1024;
+			offset += bank->sectors[i].size;
+			bank->sectors[i].is_erased = -1;
+			bank->sectors[i].is_protected = 1;//vexriscv_nor_spi_spiReadLock(bank, offset);
+			bank->size += bank->sectors[i].size;
+		}
+		priv->probed = 1;
 	}
-
-
 
 	return ERROR_OK;
 }
@@ -270,6 +257,7 @@ FLASH_BANK_COMMAND_HANDLER(vexriscv_nor_spi_flash_bank_command)
 	bank->driver_priv = malloc(sizeof(vexriscv_nor_spi_priv));
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[6], priv->ctrlAddress);
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[7], priv->ramAddress);
+	priv->probed = 0;
 
 	return ERROR_OK;
 }
@@ -378,10 +366,42 @@ int vexriscv_nor_spi_read(struct flash_bank *bank, uint8_t *buffer, uint32_t off
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(vexriscv_nor_spi_reset_driver_command)
+{
+	if (CMD_ARGC < 1)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	struct flash_bank* bank = get_flash_bank_by_name_noprobe(cmd->argv[0]);
+	if(bank == NULL) return ERROR_COMMAND_SYNTAX_ERROR;
+	priv->probed = 0;
+	return ERROR_OK;
+}
+
+static const struct command_registration vexriscv_nor_spi_exec_command_handlers[] = {
+	{
+		.name = "reset_driver",
+		.handler = vexriscv_nor_spi_reset_driver_command,
+		.mode = COMMAND_EXEC,
+		.help = "reset driver <bank_name>",
+		.usage = "<bank_name>",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+static const struct command_registration vexriscv_nor_spi_command_handlers[] = {
+	{
+		.name = "vexriscv_nor_spi",
+		.mode = COMMAND_ANY,
+		.help = "vexriscv nor spi command group",
+		.usage = "",
+		.chain = vexriscv_nor_spi_exec_command_handlers,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
 
 struct flash_driver vexriscv_nor_spi = {
 	.name = "vexriscv_nor_spi",
-//	.commands = vexriscv_command_handlers,
+	.commands = vexriscv_nor_spi_command_handlers,
 	.flash_bank_command = vexriscv_nor_spi_flash_bank_command,
 	.erase = vexriscv_nor_spi_erase,
 	.protect = vexriscv_protect,
