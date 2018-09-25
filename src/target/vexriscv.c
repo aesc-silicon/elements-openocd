@@ -709,7 +709,6 @@ static int vexriscv_debug_entry(struct target *target)
 	int error;
 	LOG_DEBUG("-");
 
-
 	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return error;
@@ -781,12 +780,6 @@ static int vexriscv_poll(struct target *target)
 			target_call_event_callbacks(target,TARGET_EVENT_HALTED);
 		} else if (target->state == TARGET_DEBUG_RUNNING) {
 			target->state = TARGET_HALTED;
-
-			retval = vexriscv_debug_entry(target);
-			if (retval != ERROR_OK) {
-				LOG_ERROR("Error while calling vexriscv_debug_entry");
-				return retval;
-			}
 
 			target_call_event_callbacks(target,TARGET_EVENT_DEBUG_HALTED);
 		}
@@ -1617,7 +1610,7 @@ static int vexriscv_run_and_wait(struct target *target, target_addr_t entry_poin
 		return retval;
 	}
 
-	target->state = TARGET_RUNNING;
+	target->state = TARGET_DEBUG_RUNNING;
 
 	retval = target_wait_state(target, TARGET_HALTED, timeout_ms);
 	/* If the target fails to halt due to the breakpoint, force a halt */
@@ -1685,7 +1678,6 @@ int vexriscv_run_algorithm(struct target *target, int num_mem_params,
 
 		vexriscv_write_regfile(target, false, reg->number, *(uint32_t*) reg_params[i].value);
 	}
-
 
 	retval = vexriscv_run_and_wait(target, entry_point, timeout_ms);
 
