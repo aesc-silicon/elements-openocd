@@ -39,7 +39,6 @@
 
 typedef struct  {
 	uint32_t ctrlAddress;
-	uint32_t ramAddress;
 	bool probed;
 } vexriscv_nor_spi_priv;
 
@@ -251,12 +250,11 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 
 FLASH_BANK_COMMAND_HANDLER(vexriscv_nor_spi_flash_bank_command)
 {
-	if (CMD_ARGC < 8)
+	if (CMD_ARGC < 7)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	bank->driver_priv = malloc(sizeof(vexriscv_nor_spi_priv));
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[6], priv->ctrlAddress);
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[7], priv->ramAddress);
 	priv->probed = 0;
 
 	return ERROR_OK;
@@ -300,19 +298,28 @@ int vexriscv_nor_spi_write(struct flash_bank *bank, const uint8_t *buffer, uint3
 	uint32_t end = offset + count;
 	uint32_t burstMax = 256;
 	uint32_t burstMask = ~(burstMax-1);
-	uint32_t codeAddress = ((uint32_t)priv->ramAddress) + burstMax;
+	struct target *target = bank->target;
+	struct working_area * workArea;
+	if(target_alloc_working_area(target, 512 + burstMax, &workArea) != ERROR_OK){
+		LOG_ERROR("vexriscv_nor_spi can't allocate a working area in that target");
+		return ERROR_BUF_TOO_SMALL;
+	}
+	uint32_t ramAddress = workArea->address;
+	uint32_t codeAddress = ramAddress + burstMax;
+
+
 	target_write_buffer(bank->target, codeAddress, vexriscv_nor_spi_write_bin_len, vexriscv_nor_spi_write_bin);
 
 	while(offset < end){
 		uint32_t offsetNext = MIN((offset & burstMask) + burstMax, end);
 		uint32_t burstSize = offsetNext - offset;
 		struct mem_param mp[1];
-		mp[0].address = priv->ramAddress;
+		mp[0].address = ramAddress;
 		mp[0].size = burstSize;
 		mp[0].value = (uint8_t*)buffer;
 		mp[0].direction = PARAM_OUT;
 		struct reg_param rp[4];
-		uint32_t rpValues[] = {priv->ctrlAddress, offset, burstSize,  priv->ramAddress};
+		uint32_t rpValues[] = {priv->ctrlAddress, offset, burstSize, ramAddress};
 		char* rpNames[] = {"x10","x11","x12","x13"};
 		for(int i = 0;i < 4;i ++){
 			rp[i].reg_name = rpNames[i];
@@ -320,7 +327,6 @@ int vexriscv_nor_spi_write(struct flash_bank *bank, const uint8_t *buffer, uint3
 			rp[i].size = 32;
 			rp[i].direction = PARAM_OUT;
 		}
-
 		target_run_algorithm(bank->target, 1,mp,4,rp, codeAddress, -1, 2000, NULL);
 		buffer += burstSize;
 		offset = offsetNext;
@@ -328,6 +334,9 @@ int vexriscv_nor_spi_write(struct flash_bank *bank, const uint8_t *buffer, uint3
 
 	vexriscv_nor_spi_spiWaitNotBusy(bank);
 	vexriscv_nor_spi_spiClearStatus(bank);
+
+
+	target_free_working_area(target, workArea);
 
 	return ERROR_OK;
 }
@@ -337,19 +346,27 @@ int vexriscv_nor_spi_read(struct flash_bank *bank, uint8_t *buffer, uint32_t off
 	uint32_t end = offset + count;
 	uint32_t burstMax = 256;
 	uint32_t burstMask = ~(burstMax-1);
-	uint32_t codeAddress = ((uint32_t)priv->ramAddress) + burstMax;
+	struct target *target = bank->target;
+	struct working_area * workArea;
+	if(target_alloc_working_area(target, 512 + burstMax, &workArea) != ERROR_OK){
+		LOG_ERROR("vexriscv_nor_spi can't allocate a working area in that target");
+		return ERROR_BUF_TOO_SMALL;
+	}
+	uint32_t ramAddress = workArea->address;
+	uint32_t codeAddress = ramAddress + burstMax;
+
 	target_write_buffer(bank->target, codeAddress, vexriscv_nor_spi_read_bin_len, vexriscv_nor_spi_read_bin);
 
 	while(offset < end){
 		uint32_t offsetNext = MIN((offset & burstMask) + burstMax, end);
 		uint32_t burstSize = offsetNext - offset;
 		struct mem_param mp[1];
-		mp[0].address = priv->ramAddress;
+		mp[0].address = ramAddress;
 		mp[0].size = burstSize;
 		mp[0].value = (uint8_t*)buffer;
 		mp[0].direction = PARAM_IN;
 		struct reg_param rp[4];
-		uint32_t rpValues[] = {priv->ctrlAddress, offset, burstSize,  priv->ramAddress};
+		uint32_t rpValues[] = {priv->ctrlAddress, offset, burstSize,  ramAddress};
 		char* rpNames[] = {"x10","x11","x12","x13"};
 		for(int i = 0;i < 4;i ++){
 			rp[i].reg_name = rpNames[i];
@@ -363,6 +380,7 @@ int vexriscv_nor_spi_read(struct flash_bank *bank, uint8_t *buffer, uint32_t off
 		offset = offsetNext;
 	}
 
+	target_free_working_area(target, workArea);
 	return ERROR_OK;
 }
 
