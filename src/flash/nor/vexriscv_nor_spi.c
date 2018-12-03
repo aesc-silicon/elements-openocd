@@ -207,16 +207,19 @@ static void vexriscv_nor_spi_spiWriteVolatileConfig(struct flash_bank *bank, uin
 }
 
 
+static void vexriscv_nor_spi_init(struct flash_bank *bank){
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_XIP_CONFIG, 0x0);
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_MODE, 0x0);
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_RATE, 0x2);
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_SETUP, 0x4);
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_HOLD, 0x4);
+	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_DISABLE, 0x4);
+}
+
 static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 {
 	if(!priv->probed){
-		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_XIP_CONFIG, 0x0);
-		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_MODE, 0x0);
-		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_RATE, 0x2);
-		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_SETUP, 0x4);
-		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_HOLD, 0x4);
-		vexriscv_nor_spi_writeCtrlU32(bank, CTRL_SS_DISABLE, 0x4);
-
+		vexriscv_nor_spi_init(bank);
 
 		vexriscv_nor_spi_spiStart(bank);
 		vexriscv_nor_spi_spiWrite(bank, 0x9F);
@@ -263,6 +266,7 @@ FLASH_BANK_COMMAND_HANDLER(vexriscv_nor_spi_flash_bank_command)
 
 int  vexriscv_nor_spi_erase(struct flash_bank *bank, int first, int last){
 	LOG_DEBUG("vexriscv_nor_spi_erase %d %d", first, last);
+	vexriscv_nor_spi_init(bank);
 	for(int sector = first;sector <= last;sector++){
 		uint32_t addr = sector << 16;
 		vexriscv_nor_spi_spiWriteEnable(bank);
@@ -281,6 +285,7 @@ int  vexriscv_nor_spi_erase(struct flash_bank *bank, int first, int last){
 
 
 int vexriscv_protect(struct flash_bank *bank, int set, int first, int last){
+	vexriscv_nor_spi_init(bank);
 	for(int sector = first;sector <= last;sector++){
 		vexriscv_nor_spi_spiWriteLock(bank, bank->sectors[sector].offset, set ? 1 : 0);
 	}
@@ -343,6 +348,7 @@ int vexriscv_nor_spi_write(struct flash_bank *bank, const uint8_t *buffer, uint3
 
 #include "vexriscv_algo/vexriscv_nor_spi_read.h"
 int vexriscv_nor_spi_read(struct flash_bank *bank, uint8_t *buffer, uint32_t offset, uint32_t count){
+	vexriscv_nor_spi_init(bank);
 	uint32_t end = offset + count;
 	uint32_t burstMax = 256;
 	uint32_t burstMask = ~(burstMax-1);
