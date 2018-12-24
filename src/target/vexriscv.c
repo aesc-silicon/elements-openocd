@@ -64,6 +64,8 @@ struct vexriscv_common {
 	char* cpuConfigFile;
 	enum network_protocol networkProtocol;
 	struct BusInfo* iBus, *dBus;
+	int hardwareBreakpointsCount;
+	bool *hardwareBreakpointUsed;
 };
 
 static inline struct vexriscv_common *
@@ -183,6 +185,7 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 	vexriscv->readWaitCycles = 10;
 	vexriscv->networkProtocol = NP_IVERILOG;
 	vexriscv_create_reg_list(target);
+	vexriscv->hardwareBreakpointsCount = 0;
 
 
 	return ERROR_OK;
@@ -383,6 +386,30 @@ static void vexriscv_yaml_ignore_block(yaml_parser_t *parser){
 	}
 }
 
+static void vexriscv_parse_debugReport(yaml_parser_t *parser, struct vexriscv_common *target){
+	yaml_token_t  token;
+	target->hardwareBreakpointsCount = 0;
+	while(1){
+		yaml_parser_scan(parser, &token);
+		switch(token.type){
+			case YAML_SCALAR_TOKEN:
+				if(strcmp((char*)token.data.scalar.value,"hardwareBreakpointCount") == 0){
+					while(1){
+						yaml_parser_scan(parser, &token);
+						switch(token.type){
+							case YAML_SCALAR_TOKEN:
+								target->hardwareBreakpointsCount = atoi((char*)token.data.scalar.value);
+								return;
+								break;
+							default: break;
+						}
+					}
+				}
+			break;
+			default: break;
+		}
+	}
+}
 
 static void vexriscv_parse_busInfo(yaml_parser_t *parser, struct BusInfo *busInfo){
 	yaml_token_t  token;
@@ -447,6 +474,9 @@ static int vexriscv_parse_cpu_file(struct command_context *cmd_ctx, struct targe
 					vexriscv->dBus = malloc(sizeof(struct BusInfo));
 					vexriscv_parse_busInfo(&parser, vexriscv->dBus);
 				}
+				if(strcmp((char*)token.data.scalar.value,"debug") == 0){
+					vexriscv_parse_debugReport(&parser, vexriscv);
+				}
 				break;
 			case YAML_BLOCK_ENTRY_TOKEN: vexriscv_yaml_ignore_block(&parser); break;
 			default: break;
@@ -485,6 +515,8 @@ static int vexriscv_init_target(struct command_context *cmd_ctx, struct target *
 	vexriscv->dBus = NULL;
 	if(vexriscv_parse_cpu_file(cmd_ctx, target))
 		return ERROR_FAIL;
+	vexriscv->hardwareBreakpointUsed = malloc(sizeof(bool)*vexriscv->hardwareBreakpointsCount);
+	for(int i = 0;i < vexriscv->hardwareBreakpointsCount;i++) vexriscv->hardwareBreakpointUsed[i] = 0;
 
 	vexriscv_build_reg_cache(target);
 
@@ -540,6 +572,19 @@ static int vexriscv_arch_state(struct target *target)
 {
 	LOG_DEBUG("vexriscv_arch_state\n");
 	LOG_DEBUG("%s", __func__);
+	return ERROR_OK;
+}
+
+
+static int vexriscv_is_halted(struct target * target,uint32_t *halted){
+	uint32_t flags;
+	int error;
+	if((error = vexriscv_readStatusRegister(target, true, &flags)) != ERROR_OK){
+		LOG_ERROR("Error while calling vexriscv_is_cpu_running");
+		return error;
+	}
+	*halted = flags & vexriscv_FLAGS_HALT;
+
 	return ERROR_OK;
 }
 
@@ -664,7 +709,6 @@ static int vexriscv_debug_entry(struct target *target)
 	int error;
 	LOG_DEBUG("-");
 
-
 	if ((error =  vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_HALT_SET)) != ERROR_OK) {
 		LOG_ERROR("Impossible to stall the CPU");
 		return error;
@@ -736,12 +780,6 @@ static int vexriscv_poll(struct target *target)
 			target_call_event_callbacks(target,TARGET_EVENT_HALTED);
 		} else if (target->state == TARGET_DEBUG_RUNNING) {
 			target->state = TARGET_HALTED;
-
-			retval = vexriscv_debug_entry(target);
-			if (retval != ERROR_OK) {
-				LOG_ERROR("Error while calling vexriscv_debug_entry");
-				return retval;
-			}
 
 			target_call_event_callbacks(target,TARGET_EVENT_DEBUG_HALTED);
 		}
@@ -1155,6 +1193,11 @@ static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_
 	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
+static int vexriscv_setHardwareBreakpoint(struct target *target, bool execute, uint32_t id, uint32_t enable,uint32_t pc){
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv_memory_cmd(target, vexriscv->dbgBase + 0x40 + id*4, pc | (enable ? 1 : 0),4, 0);
+	return execute ? vexriscv_execute_jtag_queue(target) : 0;
+}
 
 static int vexriscv_writeStatusRegister(struct target *target, bool execute, uint32_t value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
@@ -1231,6 +1274,8 @@ static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_lis
 
 }
 
+
+
 static int vexriscv_add_breakpoint(struct target *target,
 			       struct breakpoint *breakpoint)
 {
@@ -1241,64 +1286,74 @@ static int vexriscv_add_breakpoint(struct target *target,
 		  breakpoint->set, breakpoint->unique_id);
 
 	/* Only support SW breakpoints for now. */
-	if (breakpoint->type == BKPT_HARD)
-		LOG_ERROR("HW breakpoints not supported for now. Doing SW breakpoint.");
-
-	/* Read and save the instruction */
-	int retval = vexriscv_read16(target,
-					 breakpoint->address,
-					 (uint16_t*)(&data));
-	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32, (uint32_t)breakpoint->address);
-		return retval;
-	}
-	retval = vexriscv_read16(target,
-					 breakpoint->address+2,
-					 ((uint16_t*)(&data))+1);
-	if (retval != ERROR_OK) {
-		LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32, (uint32_t)breakpoint->address);
-		return retval;
-	}
-
-	if (breakpoint->orig_instr != NULL)
-		free(breakpoint->orig_instr);
-
-	breakpoint->orig_instr = malloc(4);
-	memcpy(breakpoint->orig_instr, &data, 4);
-
-	/* Sub in the vexriscv trap instruction */
-	if((data & 3) == 3){
-		retval = vexriscv_write16(target,
-						  breakpoint->address,
-						  (uint16_t)vexriscv_BREAK_INST);
-
+	if (breakpoint->type == BKPT_SOFT){
+		/* Read and save the instruction */
+		int retval = vexriscv_read16(target,
+						 breakpoint->address,
+						 (uint16_t*)(&data));
 		if (retval != ERROR_OK) {
-			LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
-					(uint32_t)breakpoint->address);
+			LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32, (uint32_t)breakpoint->address);
 			return retval;
 		}
-		retval = vexriscv_write16(target,
-						  breakpoint->address+2,
-						  (uint16_t)(vexriscv_BREAK_INST >> 16));
-
+		retval = vexriscv_read16(target,
+						 breakpoint->address+2,
+						 ((uint16_t*)(&data))+1);
 		if (retval != ERROR_OK) {
-			LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
-					(uint32_t)breakpoint->address+2);
+			LOG_ERROR("Error while reading the instruction at 0x%08" PRIx32, (uint32_t)breakpoint->address);
 			return retval;
 		}
-	}else{
-		retval = vexriscv_write16(target,
-						  breakpoint->address,
-						  vexriscv_BREAKC_INST);
 
-		if (retval != ERROR_OK) {
-			LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
-					(uint32_t)breakpoint->address);
-			return retval;
+		if (breakpoint->orig_instr != NULL)
+			free(breakpoint->orig_instr);
+
+		breakpoint->orig_instr = malloc(4);
+		memcpy(breakpoint->orig_instr, &data, 4);
+
+		if((data & 3) == 3){
+			retval = vexriscv_write16(target,
+							  breakpoint->address,
+							  (uint16_t)vexriscv_BREAK_INST);
+
+			if (retval != ERROR_OK) {
+				LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
+						(uint32_t)breakpoint->address);
+				return retval;
+			}
+			retval = vexriscv_write16(target,
+							  breakpoint->address+2,
+							  (uint16_t)(vexriscv_BREAK_INST >> 16));
+
+			if (retval != ERROR_OK) {
+				LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
+						(uint32_t)breakpoint->address+2);
+				return retval;
+			}
+		}else{
+			retval = vexriscv_write16(target,
+							  breakpoint->address,
+							  vexriscv_BREAKC_INST);
+
+			if (retval != ERROR_OK) {
+				LOG_ERROR("Error while writing vexriscv_TRAP_INSTR at 0x%08" PRIx32,
+						(uint32_t)breakpoint->address);
+				return retval;
+			}
 		}
+	} else {
+		struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+
+		int32_t freeId = - 1;
+		for(int i = 0;i < vexriscv->hardwareBreakpointsCount;i++){
+			if(!vexriscv->hardwareBreakpointUsed[i]) freeId = i;
+		}
+		if(freeId == -1){
+			LOG_INFO("no watchpoint unit available for hardware breakpoint");
+			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
+		}
+		breakpoint->set = freeId+1;
+		vexriscv->hardwareBreakpointUsed[freeId] = 1;
+		vexriscv_setHardwareBreakpoint(target, true, freeId, 1,breakpoint->address);
 	}
-
-	/* TODO invalidate instruction cache */
 
 	return ERROR_OK;
 }
@@ -1311,40 +1366,50 @@ static int vexriscv_remove_breakpoint(struct target *target,
 		  breakpoint->set, breakpoint->unique_id);
 
 	/* Only support SW breakpoints for now. */
-	if (breakpoint->type == BKPT_HARD)
-		LOG_ERROR("HW breakpoints not supported for now. Doing SW breakpoint.");
+	if (breakpoint->type == BKPT_SOFT){
 
-	/* Replace the removed instruction */
-	uint32_t data = *((uint32_t*)breakpoint->orig_instr);
-	if((data & 3) == 3){
-		int retval = vexriscv_write16(target,
-						  breakpoint->address,
-						  (uint16_t)data);
+		/* Replace the removed instruction */
+		uint32_t data = *((uint32_t*)breakpoint->orig_instr);
+		if((data & 3) == 3){
+			int retval = vexriscv_write16(target,
+							  breakpoint->address,
+							  (uint16_t)data);
 
-		if (retval != ERROR_OK) {
-			LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
-					(uint32_t)breakpoint->address);
-			return retval;
+			if (retval != ERROR_OK) {
+				LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
+						(uint32_t)breakpoint->address);
+				return retval;
+			}
+			retval = vexriscv_write16(target,
+							  breakpoint->address+2,
+							  (uint16_t)(data >> 16));
+
+			if (retval != ERROR_OK) {
+				LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
+						(uint32_t)breakpoint->address+2);
+				return retval;
+			}
+		}else{
+			int retval = vexriscv_write16(target,
+							  breakpoint->address,
+							  (uint16_t)data);
+
+			if (retval != ERROR_OK) {
+				LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
+						(uint32_t)breakpoint->address);
+				return retval;
+			}
 		}
-		retval = vexriscv_write16(target,
-						  breakpoint->address+2,
-						  (uint16_t)(data >> 16));
-
-		if (retval != ERROR_OK) {
-			LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
-					(uint32_t)breakpoint->address+2);
-			return retval;
+	} else {
+		struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+		if (!breakpoint->set) {
+			LOG_WARNING("breakpoint not set");
+			return ERROR_OK;
 		}
-	}else{
-		int retval = vexriscv_write16(target,
-						  breakpoint->address,
-						  (uint16_t)data);
-
-		if (retval != ERROR_OK) {
-			LOG_ERROR("Error while writing back the instruction at 0x%08" PRIx32,
-					(uint32_t)breakpoint->address);
-			return retval;
-		}
+		uint32_t freeId = breakpoint->set - 1;
+		breakpoint->set = 0;
+		vexriscv->hardwareBreakpointUsed[freeId] = 0;
+		vexriscv_setHardwareBreakpoint(target, true, freeId, 0,breakpoint->address);
 	}
 
 
@@ -1451,13 +1516,8 @@ static int vexriscv_step(struct target *target, int current,
 static int vexriscv_examine(struct target *target)
 {
 	LOG_DEBUG("vexriscv_examine");
-	/*struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	struct reg *reg_list = calloc(vexriscv->nb_regs, sizeof(struct reg));
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 
-	for (int i = 0; i < vexriscv->nb_regs; i++) {
-		reg_list[i].dirty = 0;
-		reg_list[i].valid = 0;
-	}*/
 
 
 	if (!target_was_examined(target)) {
@@ -1468,14 +1528,14 @@ static int vexriscv_examine(struct target *target)
 		vexriscv_deassert_reset(target);
 
 
-		uint32_t running;
-		int retval = vexriscv_is_running(target,&running);
+		uint32_t halted;
+		int retval = vexriscv_is_halted(target,&halted);
 
 		if (retval != ERROR_OK) {
 			LOG_ERROR("Couldn't read the CPU state");
 			return retval;
 		} else {
-			if (running)
+			if (!halted)
 				target->state = TARGET_RUNNING;
 			else {
 				LOG_DEBUG("Target is halted");
@@ -1488,6 +1548,10 @@ static int vexriscv_examine(struct target *target)
 					target->debug_reason = DBG_REASON_DBGRQ;
 
 				target->state = TARGET_HALTED;
+
+				for(int i = 0;i < vexriscv->hardwareBreakpointsCount;i++) {
+					vexriscv_setHardwareBreakpoint(target, true,i,0,0);
+				}
 			}
 		}
 	}
@@ -1546,7 +1610,7 @@ static int vexriscv_run_and_wait(struct target *target, target_addr_t entry_poin
 		return retval;
 	}
 
-
+	target->state = TARGET_DEBUG_RUNNING;
 
 	retval = target_wait_state(target, TARGET_HALTED, timeout_ms);
 	/* If the target fails to halt due to the breakpoint, force a halt */
@@ -1614,7 +1678,6 @@ int vexriscv_run_algorithm(struct target *target, int num_mem_params,
 
 		vexriscv_write_regfile(target, false, reg->number, *(uint32_t*) reg_params[i].value);
 	}
-
 
 	retval = vexriscv_run_and_wait(target, entry_point, timeout_ms);
 

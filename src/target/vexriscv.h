@@ -30,6 +30,7 @@ static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_
 static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value);
 static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint16_t *value);
 static int vexriscv_readInstructionResult8(struct target *target, bool execute, uint8_t *value);
+static int vexriscv_setHardwareBreakpoint(struct target *target, bool execute, uint32_t id, uint32_t enable,uint32_t pc);
 
 //Abstractions
 static int vexriscv_write_memory(struct target *target, target_addr_t address, uint32_t size, uint32_t count, const uint8_t *buffer);

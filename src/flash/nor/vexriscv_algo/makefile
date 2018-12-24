@@ -1,5 +1,5 @@
 CFLAGS= -march=rv32i  -mabi=ilp32 -g -O3 -MD
-LFLAGS= -nostdlib  -mcmodel=medany -nostartfiles -ffreestanding
+LFLAGS= -nostdlib  -mcmodel=medany -nostartfiles -ffreestanding -fPIC
 
 
 all: vexriscv_nor_spi_write vexriscv_nor_spi_read
