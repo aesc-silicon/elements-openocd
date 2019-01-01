@@ -27,8 +27,8 @@
 static int vexriscv_readStatusRegister(struct target *target, bool execute, uint32_t *value);
 static int vexriscv_writeStatusRegister(struct target *target, bool execute, uint32_t value);
 static int vexriscv_pushInstruction(struct target *target, bool execute, uint32_t instruction);
-static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value);
-static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint16_t *value);
+static int vexriscv_readInstructionResult32(struct target *target, bool execute, uint8_t *value);
+static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint8_t *value);
 static int vexriscv_readInstructionResult8(struct target *target, bool execute, uint8_t *value);
 static int vexriscv_setHardwareBreakpoint(struct target *target, bool execute, uint32_t id, uint32_t enable,uint32_t pc);
 

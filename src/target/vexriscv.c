@@ -232,7 +232,7 @@ static int vexriscv_get_core_reg(struct reg *reg)
 			return ERROR_FAIL;
 		}else if(reg->number == 32){
 			vexriscv_pushInstruction(target, false, 0x17); //AUIPC x0,0
-			vexriscv_readInstructionResult(target, true, (uint32_t*)reg->value);
+			vexriscv_readInstructionResult32(target, true, reg->value);
 		}else if (vexriscv_reg->is_csr) {
 			// Perform a CSRRW which does a Read/Write.  If rs1 is $x0, then the write
 			// is ignored and side-effect free.  Set rd to $x1 to make the read 
@@ -244,7 +244,7 @@ static int vexriscv_get_core_reg(struct reg *reg)
 				| (1 << 7)	// rd: x1
 				| (0x73 << 0)	// SYSTEM
 			);
-			vexriscv_readInstructionResult(target, false, (uint32_t *)(reg->value));
+			vexriscv_readInstructionResult32(target, false, reg->value);
 		}
 		else {
 			*((uint32_t*)reg->value) = 0xDEADBEEF;
@@ -644,7 +644,7 @@ static int vexriscv_save_context(struct target *target)
 	//get PC in case of breakpoint before losing the value
 	if(flags & vexriscv_FLAGS_HALTED_BY_BREAK){
 		struct reg* reg = &vexriscv->regs->pc;
-		vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
+		vexriscv_readInstructionResult32(target, false, reg->value);
 		reg->valid = 1;
 		reg->dirty = 1;
 	}
@@ -652,7 +652,7 @@ static int vexriscv_save_context(struct target *target)
 	for(uint32_t regId = 0;regId < 32;regId++){
 		struct reg* reg = &vexriscv->core_cache->reg_list[regId];
 		vexriscv_pushInstruction(target, false, 0x13 | (reg->number << 15)); //ADDI x0, x?, 0
-		vexriscv_readInstructionResult(target, false, (uint32_t*)reg->value);
+		vexriscv_readInstructionResult32(target, false, reg->value);
 		reg->valid = 1;
 		reg->dirty = reg->number == 1 ? 1 : 0; //For safety, invalidate x1 for debugger purposes
 	}
@@ -879,8 +879,8 @@ static int vexriscv_network_write(struct vexriscv_common *vexriscv, int is_read,
 		uint8_t buffer[10];
 		buffer[0] = is_read ? 0 : 1;
 		buffer[1] = size;
-		*((uint32_t *)(buffer + 2)) = address;
-		*((uint32_t *)(buffer + 6)) = data;
+		buf_set_u32(buffer + 2, 0, 32, address);
+		buf_set_u32(buffer + 6, 0, 32, data);
 		return send(vexriscv->clientSocket, buffer, 10, 0);
 	}
 	else if (vexriscv->networkProtocol == NP_ETHERBONE)
@@ -1042,19 +1042,19 @@ static int vexriscv_read_memory(struct target *target, target_addr_t address,
 
 		switch(size){
 		case 4:
-			((uint32_t*)buffer)[0] = 0;
+			buffer[0] = 0; buffer[1] = 0; buffer[2] = 0; buffer[3] = 0;
 			vexriscv_pushInstruction(target, false, (1 << 15) | (0x2 << 12) | (1 << 7) | 0x3); //LW x1, 0(x1)
-			vexriscv_readInstructionResult(target, false, (uint32_t*)buffer);
+			vexriscv_readInstructionResult32(target, false, buffer);
 			break;
 		case 2:
-			((uint16_t*)buffer)[0] = 0;
+			buffer[0] = 0; buffer[1] = 0;
 			vexriscv_pushInstruction(target, false, (1 << 15) | (0x5 << 12) | (1 << 7) | 0x3); //LHU x1, 0(x1)
-			vexriscv_readInstructionResult16(target, false, (uint16_t*)buffer);
+			vexriscv_readInstructionResult16(target, false, buffer);
 			break;
 		case 1:
-			((uint8_t*)buffer)[0] = 0;
+			buffer[0] = 0;
 			vexriscv_pushInstruction(target, false, (1 << 15) | (0x4 << 12) | (1 << 7) | 0x3); //LBU x1, 0(x1)
-			vexriscv_readInstructionResult8(target, false, (uint8_t*)buffer);
+			vexriscv_readInstructionResult8(target, false, buffer);
 			break;
 		}
 		buffer += size;
@@ -1105,7 +1105,7 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 		struct vexriscv_mem_access accesses[count];
 		for(uint32_t accessId = 0;accessId < count;accessId++){
 			accesses[accessId].address = address + accessId*size;
-			accesses[accessId].data = ((uint32_t*)buffer)[accessId];
+			accesses[accessId].data = buf_get_u32(buffer + 4*accessId, 0 ,32);
 		}
 		//Sort access by data value
 		qsort (accesses, sizeof(accesses)/sizeof(*accesses), sizeof(*accesses), vexriscv_mem_access_comp);
@@ -1161,12 +1161,12 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 		while (count--) {
 			switch(size){
 			case 4:
-				vexriscv_write_regfile(target, false, 1,*((uint32_t*)buffer));
+				vexriscv_write_regfile(target, false, 1,buf_get_u32(buffer, 0, 32));
 				vexriscv_write_regfile(target, false, 2,address);
 				vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x2 << 12) | 0x23); //SW x1,0(x2)
 				break;
 			case 2:
-				vexriscv_write_regfile(target, false, 1,*((uint16_t*)buffer));
+				vexriscv_write_regfile(target, false, 1,buf_get_u32(buffer, 0 ,16));
 				vexriscv_write_regfile(target, false, 2,address);
 				vexriscv_pushInstruction(target, false, (1 << 20) | (2 << 15) | (0x1 << 12) | 0x23); //SH x1,0(x2)
 				break;
@@ -1212,19 +1212,21 @@ static int vexriscv_readStatusRegister(struct target *target, bool execute, uint
 	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
-static int vexriscv_readInstructionResult(struct target *target, bool execute, uint32_t *value){
+static int vexriscv_readInstructionResult32(struct target *target, bool execute, uint8_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
-	vexriscv_read_rsp(target,(uint8_t*)value, 4);
+	vexriscv_read_rsp(target, value, 4);
 	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
 
-static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint16_t *value){
+
+static int vexriscv_readInstructionResult16(struct target *target, bool execute, uint8_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	vexriscv_memory_cmd(target, vexriscv->dbgBase + 4,0, 4, 1);
-	vexriscv_read_rsp(target,(uint8_t*)value, 2);
+	vexriscv_read_rsp(target, value, 2);
 	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
+
 
 static int vexriscv_readInstructionResult8(struct target *target, bool execute, uint8_t *value){
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
@@ -1232,17 +1234,7 @@ static int vexriscv_readInstructionResult8(struct target *target, bool execute, 
 	vexriscv_read_rsp(target,(uint8_t*)value, 1);
 	return execute ? vexriscv_execute_jtag_queue(target) : 0;
 }
-/*
 
-static int vexriscv_write32(struct target *target, uint32_t address,uint32_t data){
-	return vexriscv_write_memory(target,address,4,1,(uint8_t*)&data);
-}
-
-
-static int vexriscv_read32(struct target *target, uint32_t address,uint32_t *data){
-	return vexriscv_read_memory(target,address,4,1,(uint8_t*)data);
-}
-*/
 static int vexriscv_read16(struct target *target, uint32_t address,uint16_t *data){
 	return vexriscv_read_memory(target,address,2,1,(uint8_t*)data);
 }
@@ -1369,7 +1361,7 @@ static int vexriscv_remove_breakpoint(struct target *target,
 	if (breakpoint->type == BKPT_SOFT){
 
 		/* Replace the removed instruction */
-		uint32_t data = *((uint32_t*)breakpoint->orig_instr);
+		uint32_t data = buf_get_u32(breakpoint->orig_instr,0,32);
 		if((data & 3) == 3){
 			int retval = vexriscv_write16(target,
 							  breakpoint->address,
