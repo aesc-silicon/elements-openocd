@@ -140,9 +140,9 @@ static int vexriscv_create_reg_list(struct target *target)
 			vexriscv->largest_csr = vexriscv_init_reg_list[i].csr_num;
 	vexriscv->largest_csr += 65;
 
-	vexriscv_core_reg_list_arch_info = malloc(vexriscv->largest_csr *
+	vexriscv_core_reg_list_arch_info = malloc((vexriscv->largest_csr+1) *
 				       sizeof(struct vexriscv_core_reg));
-	memset(vexriscv_core_reg_list_arch_info, 0, vexriscv->largest_csr *
+	memset(vexriscv_core_reg_list_arch_info, 0, (vexriscv->largest_csr+1) *
 				       sizeof(struct vexriscv_core_reg));
 
 	for (i = 0; i < (int)ARRAY_SIZE(vexriscv_init_reg_list); i++) {
