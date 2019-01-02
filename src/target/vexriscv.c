@@ -1668,7 +1668,7 @@ int vexriscv_run_algorithm(struct target *target, int num_mem_params,
 		}
 
 
-		vexriscv_write_regfile(target, false, reg->number, *(uint32_t*) reg_params[i].value);
+		vexriscv_write_regfile(target, false, reg->number, buf_get_u32(reg_params[i].value,0,32));
 	}
 
 	retval = vexriscv_run_and_wait(target, entry_point, timeout_ms);
