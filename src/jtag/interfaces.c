@@ -61,6 +61,9 @@ extern struct jtag_interface usb_blaster_interface;
 #if BUILD_JTAG_VPI == 1
 extern struct jtag_interface jtag_vpi_interface;
 #endif
+#if BUILD_FT232R == 1
+extern struct jtag_interface ft232r_interface;
+#endif
 #if BUILD_AMTJTAGACCEL == 1
 extern struct jtag_interface amt_jtagaccel_interface;
 #endif
@@ -130,6 +133,9 @@ extern struct jtag_interface kitprog_interface;
 #if BUILD_IMX_GPIO == 1
 extern struct jtag_interface imx_gpio_interface;
 #endif
+#if BUILD_XDS110 == 1
+extern struct jtag_interface xds110_interface;
+#endif
 #endif /* standard drivers */
 
 /**
@@ -160,6 +166,9 @@ struct jtag_interface *jtag_interfaces[] = {
 #endif
 #if BUILD_JTAG_VPI == 1
 		&jtag_vpi_interface,
+#endif
+#if BUILD_FT232R == 1
+		&ft232r_interface,
 #endif
 #if BUILD_AMTJTAGACCEL == 1
 		&amt_jtagaccel_interface,
@@ -229,6 +238,9 @@ struct jtag_interface *jtag_interfaces[] = {
 #endif
 #if BUILD_IMX_GPIO == 1
 		&imx_gpio_interface,
+#endif
+#if BUILD_XDS110 == 1
+		&xds110_interface,
 #endif
 #endif /* standard drivers */
 		NULL,

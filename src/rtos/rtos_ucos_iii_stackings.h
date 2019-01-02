@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2016 by Square, Inc.                                    *
+ *   Copyright (C) 2017 by Square, Inc.                                    *
  *   Steven Stallion <stallion@squareup.com>                               *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,8 +23,9 @@
 #include "config.h"
 #endif
 
-#include "rtos.h"
+#include <rtos/rtos.h>
 
 extern const struct rtos_register_stacking rtos_uCOS_III_Cortex_M_stacking;
+extern const struct rtos_register_stacking rtos_uCOS_III_eSi_RISC_stacking;
 
 #endif /* OPENOCD_RTOS_RTOS_UCOS_III_STACKINGS_H */

@@ -4,7 +4,9 @@ else
 OOCD_TRACE_FILES =
 endif
 
-%C%_libtarget_la_LIBADD = %D%/openrisc/libopenrisc.la
+%C%_libtarget_la_LIBADD = %D%/openrisc/libopenrisc.la \
+	%D%/riscv/libriscv.la
+
 
 STARTUP_TCL_SRCS += %D%/startup.tcl
 
@@ -19,7 +21,9 @@ noinst_LTLIBRARIES += %D%/libtarget.la
 	$(AVR32_SRC) \
 	$(MIPS32_SRC) \
 	$(NDS32_SRC) \
+	$(STM8_SRC) \
 	$(INTEL_IA32_SRC) \
+	$(ESIRISC_SRC) \
 	$(VEXRISCV_SRC) \
 	%D%/avrt.c \
 	%D%/dsp563xx.c \
@@ -39,11 +43,12 @@ TARGET_CORE_SRC = \
 	%D%/target.c \
 	%D%/target_request.c \
 	%D%/testee.c \
+	%D%/semihosting_common.c \
 	%D%/smp.c
 
 VEXRISCV_SRC = \
 	%D%/vexriscv.c
-
+	
 ARMV4_5_SRC = \
 	%D%/armv4_5.c \
 	%D%/armv4_5_mmu.c \
@@ -74,8 +79,10 @@ ARMV7_SRC = \
 	%D%/armv7m_trace.c \
 	%D%/cortex_m.c \
 	%D%/armv7a.c \
+	%D%/armv7a_mmu.c \
 	%D%/cortex_a.c \
-	%D%/ls1_sap.c
+	%D%/ls1_sap.c \
+	%D%/mem_ap.c
 
 ARMV8_SRC = \
 	%D%/armv8_dpm.c \
@@ -91,6 +98,7 @@ ARM_DEBUG_SRC = \
 	%D%/arm_simulator.c \
 	%D%/arm_semihosting.c \
 	%D%/arm_adi_v5.c \
+	%D%/arm_dap.c \
 	%D%/armv7a_cache.c \
 	%D%/armv7a_cache_l2x.c \
 	%D%/adi_v5_jtag.c \
@@ -128,11 +136,19 @@ NDS32_SRC = \
 	%D%/nds32_v3m.c \
 	%D%/nds32_aice.c
 
+STM8_SRC = \
+	%D%/stm8.c
+
 INTEL_IA32_SRC = \
 	%D%/quark_x10xx.c \
 	%D%/quark_d20xx.c \
 	%D%/lakemont.c \
 	%D%/x86_32_common.c
+
+ESIRISC_SRC = \
+	%D%/esirisc.c \
+	%D%/esirisc_jtag.c \
+	%D%/esirisc_trace.c
 
 %C%_libtarget_la_SOURCES += \
 	%D%/algorithm.h \
@@ -142,6 +158,7 @@ INTEL_IA32_SRC = \
 	%D%/arm_adi_v5.h \
 	%D%/armv7a_cache.h \
 	%D%/armv7a_cache_l2x.h \
+	%D%/armv7a_mmu.h \
 	%D%/arm_disassembler.h \
 	%D%/arm_opcodes.h \
 	%D%/arm_simulator.h \
@@ -209,8 +226,15 @@ INTEL_IA32_SRC = \
 	%D%/nds32_v3.h \
 	%D%/nds32_v3m.h \
 	%D%/nds32_aice.h \
+	%D%/semihosting_common.h \
+	%D%/stm8.h \
 	%D%/lakemont.h \
 	%D%/x86_32_common.h \
-	%D%/arm_cti.h
+	%D%/arm_cti.h \
+	%D%/esirisc.h \
+	%D%/esirisc_jtag.h \
+	%D%/esirisc_regs.h \
+	%D%/esirisc_trace.h
 
 include %D%/openrisc/Makefile.am
+include %D%/riscv/Makefile.am
