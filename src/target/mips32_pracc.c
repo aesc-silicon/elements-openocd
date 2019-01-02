@@ -123,7 +123,7 @@ static void mips32_pracc_finish(struct mips_ejtag *ejtag_info)
 int mips32_pracc_clean_text_jump(struct mips_ejtag *ejtag_info)
 {
 	uint32_t jt_code = MIPS32_J(ejtag_info->isa, MIPS32_PRACC_TEXT);
-	//pracc_swap16_array(ejtag_info, &jt_code, 1);
+	pracc_swap16_array(ejtag_info, &jt_code, 1);
 	/* do 3 0/nops to clean pipeline before a jump to pracc text, NOP in delay slot */
 	for (int i = 0; i != 5; i++) {
 		/* Wait for pracc */
@@ -954,7 +954,7 @@ int mips32_pracc_fastdata_xfer(struct mips_ejtag *ejtag_info, struct working_are
 	if (source->size < MIPS32_FASTDATA_HANDLER_SIZE)
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 
-	//pracc_swap16_array(ejtag_info, handler_code, ARRAY_SIZE(handler_code));
+	pracc_swap16_array(ejtag_info, handler_code, ARRAY_SIZE(handler_code));
 		/* write program into RAM */
 	if (write_t != ejtag_info->fast_access_save) {
 		mips32_pracc_write_mem(ejtag_info, source->address, 4, ARRAY_SIZE(handler_code), handler_code);
@@ -971,7 +971,7 @@ int mips32_pracc_fastdata_xfer(struct mips_ejtag *ejtag_info, struct working_are
 		isa ? MIPS32_XORI(isa, 15, 15, 1) : MIPS32_NOP,	/* drop isa bit, needed for LW/SW instructions */
 	};
 
-	//pracc_swap16_array(ejtag_info, jmp_code, ARRAY_SIZE(jmp_code));
+	pracc_swap16_array(ejtag_info, jmp_code, ARRAY_SIZE(jmp_code));
 
 	/* execute jump code, with no address check */
 	for (unsigned i = 0; i < ARRAY_SIZE(jmp_code); i++) {

@@ -1098,11 +1098,6 @@ static int cfi_protect(struct flash_bank *bank, int set, int first, int last)
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if ((first < 0) || (last < first) || (last >= bank->num_sectors)) {
-		LOG_ERROR("Invalid sector range");
-		return ERROR_FLASH_SECTOR_INVALID;
-	}
-
 	if (cfi_info->qry[0] != 'Q')
 		return ERROR_FLASH_BANK_NOT_PROBED;
 
@@ -3128,4 +3123,5 @@ struct flash_driver cfi_flash = {
 	.erase_check = default_flash_blank_check,
 	.protect_check = cfi_protect_check,
 	.info = get_cfi_info,
+	.free_driver_priv = default_flash_free_driver_priv,
 };
