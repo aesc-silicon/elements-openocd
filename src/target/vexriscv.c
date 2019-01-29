@@ -1248,7 +1248,7 @@ static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_lis
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	LOG_DEBUG("vexriscv_get_gdb_reg_list %d\n",reg_class);
 	if (reg_class == REG_CLASS_GENERAL) {
-		*reg_list_size = sizeof(struct vexriscv_reg_mapping) / sizeof(struct reg);
+		*reg_list_size = 32;
 		*reg_list = malloc((*reg_list_size) * sizeof(struct reg *));
 
 		for (int i = 0; i < *reg_list_size; i++)
