@@ -334,13 +334,20 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 	assert(sizeof(struct reg)*vexriscv->nb_regs >= sizeof(struct vexriscv_reg_mapping));
 	vexriscv->regs = (struct vexriscv_reg_mapping*)reg_list;
 
+	static struct reg_feature feature_cpu = {
+		.name = "org.gnu.gdb.riscv.cpu"
+	};
+	static struct reg_feature feature_csr = {
+		.name = "org.gnu.gdb.riscv.csr"
+	};
+
 	for (uint32_t i = 0; i < vexriscv->nb_regs; i++) {
 		arch_info[i] = vexriscv_core_reg_list_arch_info[i];
 		arch_info[i].target = target;
 		arch_info[i].vexriscv_common = vexriscv;
 		reg_list[i].name = vexriscv_core_reg_list_arch_info[i].name;
-		reg_list[i].feature = NULL;
-		reg_list[i].group = NULL;
+		reg_list[i].feature = &feature_cpu;
+		reg_list[i].group = "general";
 		reg_list[i].size = 32;
 		reg_list[i].value = calloc(1, 4);
 		reg_list[i].dirty = 0;
@@ -348,6 +355,11 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 		reg_list[i].type = &vexriscv_reg_type;
 		reg_list[i].arch_info = &arch_info[i];
 		reg_list[i].number = i;
+
+		if (vexriscv_core_reg_list_arch_info[i].is_csr) {
+			reg_list[i].group = "csr";
+			reg_list[i].feature = &feature_csr;
+		}
 
 		if ((i <= 32) || (vexriscv_core_reg_list_arch_info[i].is_csr))
 			reg_list[i].exist = true;
