@@ -869,7 +869,7 @@ static int vexriscv_deassert_reset(struct target *target)
 static int vexriscv_network_read(struct vexriscv_common *vexriscv, void *buffer, size_t count)
 {
 	if (vexriscv->networkProtocol == NP_IVERILOG)
-		return recv(vexriscv->clientSocket, &buffer, 4, 0);
+		return recv(vexriscv->clientSocket, buffer, 4, 0);
 	else if (vexriscv->networkProtocol == NP_ETHERBONE) {
 		uint8_t wb_buffer[20];
 		uint32_t intermediate;
