@@ -67,6 +67,7 @@ struct vexriscv_common {
 	struct BusInfo* iBus, *dBus;
 	int hardwareBreakpointsCount;
 	bool *hardwareBreakpointUsed;
+	uint32_t bridgeInstruction;
 };
 
 static inline struct vexriscv_common *
@@ -188,6 +189,7 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 	vexriscv->networkProtocol = NP_IVERILOG;
 	vexriscv_create_reg_list(target);
 	vexriscv->hardwareBreakpointsCount = 0;
+	vexriscv->bridgeInstruction = -1;
 
 
 	return ERROR_OK;
@@ -370,10 +372,13 @@ static struct reg_cache *vexriscv_build_reg_cache(struct target *target)
 	return cache;
 }
 
-static void vexriscv_set_instr(struct jtag_tap *tap, uint32_t new_instr)
+static void vexriscv_set_instr(struct target *target, uint32_t new_instr)
 {
 	struct scan_field field;
-
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	struct jtag_tap *tap = target->tap;
+	if(new_instr == vexriscv->bridgeInstruction) return;
+	vexriscv->bridgeInstruction = new_instr;
 	field.num_bits = tap->ir_length;
 	uint8_t *t = calloc(DIV_ROUND_UP(field.num_bits, 8), 1);
 	field.out_value = t;
@@ -948,7 +953,7 @@ static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t
 	struct scan_field field;
 	uint8_t cmd[10];
 
-	if(!vexriscv->useTCP) vexriscv_set_instr(tap, 0x2);
+	if(!vexriscv->useTCP) vexriscv_set_instr(target, 0x2);
 
 	uint8_t inst = 0x00;
 	switch(size){
@@ -1017,7 +1022,7 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value, uint32_t siz
 
 	if(!vexriscv->useTCP) {
 		jtag_add_clocks(vexriscv->readWaitCycles);
-		vexriscv_set_instr(tap, 0x03);
+		vexriscv_set_instr(target, 0x03);
 		jtag_add_dr_scan(tap, size == 4 ? 2 : 3, feilds, TAP_IDLE);
 	} else {
 		uint32_t buffer;
@@ -1096,8 +1101,8 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 				const uint8_t *buffer)
 {
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
-	//LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
-	//	  "; size %" PRId32 "; count %" PRId32, (uint32_t)address, size, count);
+	LOG_DEBUG("Writing memory at physical address 0x%" PRIx32
+		  "; size %" PRId32 "; count %" PRId32, (uint32_t)address, size, count);
 
 	if (target->state != TARGET_HALTED)
 		vexriscv_halt(target);
