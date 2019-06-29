@@ -18,7 +18,7 @@
 
 
 static void spiNotFull(volatile uint32_t* ctrlAddress){
-	while(ctrlAddress[CTRL_STATUS] >> 16 == 0);
+	while((ctrlAddress[CTRL_STATUS] & 0xFFFF) == 0);
 }
 
 
@@ -43,7 +43,7 @@ static uint8_t spiRead(volatile uint32_t* ctrlAddress){
 	ctrlAddress[CTRL_DATA] = 0x200;
 	while(1){
 		uint32_t ret = ctrlAddress[CTRL_DATA];
-		if(ret & 0x80000000) return ret;
+		if((ret & 0x80000000) == 0) return ret;
 	}
 }
 

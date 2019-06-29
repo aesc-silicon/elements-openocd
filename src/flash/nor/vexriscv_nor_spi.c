@@ -76,7 +76,7 @@ static void vexriscv_nor_spi_writeCtrlU32(struct flash_bank *bank, uint32_t addr
 
 static void vexriscv_nor_spi_spiNotFull(struct flash_bank *bank)
 {
-	while(vexriscv_nor_spi_readCtrlU32(bank, CTRL_STATUS) >> 16 == 0);
+	while((vexriscv_nor_spi_readCtrlU32(bank, CTRL_STATUS) & 0xFFFF) == 0);
 }
 
 
@@ -105,7 +105,7 @@ static uint8_t vexriscv_nor_spi_spiRead(struct flash_bank *bank)
 	vexriscv_nor_spi_writeCtrlU32(bank, CTRL_DATA, 0x200);
 	while(1){
 		uint32_t ret = vexriscv_nor_spi_readCtrlU32(bank, CTRL_DATA);
-		if(ret & 0x80000000) return ret;
+		if((ret & 0x80000000) == 0) return ret;
 	}
 }
 
