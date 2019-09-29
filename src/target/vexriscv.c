@@ -13,7 +13,7 @@
  *   GNU General Public License for more details.                          *
  ***************************************************************************/
 #include "vexriscv.h"
-
+#include "semihosting_common.h"
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -126,6 +126,21 @@ struct vexriscv_reg_mapping {
 };
 
 #include "vexriscv-csrs.h"
+
+static int vexriscv_semihosting_setup(struct target *target, int enable);
+static int vexriscv_semihosting_post_result(struct target *target);
+
+/**
+ * Initialize RISC-V semihosting. Use common ARM code.
+ */
+void vexriscv_semihosting_init(struct target *target)
+{
+	semihosting_common_init(target, vexriscv_semihosting_setup,
+		vexriscv_semihosting_post_result);
+}
+
+
+
 
 
 static int vexriscv_create_reg_list(struct target *target)
@@ -583,7 +598,7 @@ static int vexriscv_init_target(struct command_context *cmd_ctx, struct target *
 			LOG_DEBUG("TCP connection to target etablished");
 		}
 	}
-
+	vexriscv_semihosting_init(target);
 	return ERROR_OK;
 }
 
@@ -772,6 +787,139 @@ static int vexriscv_halt(struct target *target)
 }
 
 
+
+
+/**
+ * Check for and process a semihosting request using the ARM protocol). This
+ * is meant to be called when the target is stopped due to a debug mode entry.
+ * If the value 0 is returned then there was nothing to process. A non-zero
+ * return value signifies that a request was processed and the target resumed,
+ * or an error was encountered, in which case the caller must return
+ * immediately.
+ *
+ * @param target Pointer to the target to process.
+ * @param retval Pointer to a location where the return code will be stored
+ * @return non-zero value if a request was processed or an error encountered
+ */
+int vexriscv_semihosting(struct target *target, int *retval)
+{
+    struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+
+	struct semihosting *semihosting = target->semihosting;
+	if (!semihosting)
+		return 0;
+
+	if (!semihosting->is_active)
+		return 0;
+
+    uint32_t pc = 0xdeadbeef;
+    
+    vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[32]);
+    pc = *((uint32_t*) vexriscv->core_cache->reg_list[32].value);
+
+    
+    LOG_DEBUG("semihosting pc: %08x", pc);
+    // todo proper error handling
+    if (pc == 0xdeadbeef) {
+        return 0;
+    }
+
+	uint8_t tmp[12];
+	/* Read the current instruction, including the bracketing */
+    /*int result =*/ vexriscv_read_memory(target, pc-4, sizeof(uint32_t), 3, tmp);
+
+    // todo error handling
+
+	/*
+	 * The instructions that trigger a semihosting call,
+	 * always uncompressed, should look like:
+	 *
+	 * 01f01013              slli    zero,zero,0x1f
+	 * 00100073              ebreak
+	 * 40705013              srai    zero,zero,0x7
+	 */
+	uint32_t pre = target_buffer_get_u32(target, tmp);
+	uint32_t ebreak = target_buffer_get_u32(target, tmp + 4);
+	uint32_t post = target_buffer_get_u32(target, tmp + 8);
+	LOG_DEBUG("semihosting check %08x %08x %08x from 0x%" PRIx64 "-4", pre, ebreak, post, (uint64_t) pc);
+
+	if (pre != 0x01f01013 || ebreak != 0x00100073 || post != 0x40705013) {
+
+		/* Not the magic sequence defining semihosting. */
+		return 0;
+	}
+
+	/*
+	 * Perform semihosting call if we are not waiting on a fileio
+	 * operation to complete.
+	 */
+	if (!semihosting->hit_fileio) {
+
+		/* RISC-V uses A0 and A1 to pass function arguments */
+        uint32_t r0;
+        uint32_t r1;
+        
+        vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[10]);
+        r0 = *((uint32_t*) vexriscv->core_cache->reg_list[10].value);
+        
+        vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[11]);
+        r1 = *((uint32_t*) vexriscv->core_cache->reg_list[11].value);
+        
+        LOG_DEBUG("semihosting  r0: %08x", r0);
+        LOG_DEBUG("semihosting  r1: %08x", r1);
+        
+		semihosting->op = r0;
+		semihosting->param = r1;
+		semihosting->word_size_bytes = sizeof(uint32_t);//riscv_xlen(target) / 8;
+
+        /* Check for ARM operation numbers. */
+		if (0 <= semihosting->op && semihosting->op <= 0x31) {
+			*retval = semihosting_common(target);
+			if (*retval != ERROR_OK) {
+				LOG_ERROR("Failed semihosting operation");
+				return 0;
+			}
+		} else {
+			/* Unknown operation number, not a semihosting call. */
+			return 0;
+		}
+	}
+
+	/*
+	 * Resume target if we are not waiting on a fileio
+	 * operation to complete.
+	 */
+	if (semihosting->is_resumable && !semihosting->hit_fileio) {
+        // resume only if it was running
+        if (target->debug_reason == DBG_REASON_NOTHALTED) {
+            /* Resume right after the EBREAK 4 bytes instruction. */
+            *retval = target_resume(target, 0, pc+4, 0, 0);
+            if (*retval != ERROR_OK) {
+                LOG_ERROR("Failed to resume target");
+                return 0;
+            }
+            return 2;
+        } else if (target->debug_reason == DBG_REASON_SINGLESTEP) {
+            // otherwise
+            // set PC to next address instead of resuming
+            pc += 4;
+            vexriscv_set_core_reg(&vexriscv->core_cache->reg_list[32], (uint8_t*) &pc);
+            return 1;
+        } else {
+            LOG_INFO("unknown debug_reason: %d\n", target->debug_reason);
+            return 0;
+        }
+	}
+
+	return 0;
+}
+
+
+
+
+
+
+#include <stdlib.h>
 static int vexriscv_poll(struct target *target)
 {
 	int retval;
@@ -795,9 +943,15 @@ static int vexriscv_poll(struct target *target)
 				LOG_ERROR("Error while calling vexriscv_debug_entry");
 				return retval;
 			}
+			if (target->debug_reason == DBG_REASON_SINGLESTEP || target->debug_reason == DBG_REASON_NOTHALTED) {
+				if (vexriscv_semihosting(target, &retval) == 2) {
+					return ERROR_OK; // don't call event handler if not in single-step
+				}
+			}
 
 			target_call_event_callbacks(target,TARGET_EVENT_HALTED);
 		} else if (target->state == TARGET_DEBUG_RUNNING) {
+			// don't know what this is for ...
 			target->state = TARGET_HALTED;
 
 			target_call_event_callbacks(target,TARGET_EVENT_DEBUG_HALTED);
@@ -1260,6 +1414,39 @@ static int vexriscv_read16(struct target *target, uint32_t address,uint16_t *dat
 static int vexriscv_write16(struct target *target, uint32_t address,uint16_t data){
 	return vexriscv_write_memory(target,address,2,1,(uint8_t*)&data);
 }
+
+/**
+ * Called via semihosting->setup() later, after the target is known,
+ * usually on the first semihosting command.
+ */
+static int vexriscv_semihosting_setup(struct target *target, int enable)
+{
+	LOG_DEBUG("enable=%d", enable);
+
+	struct semihosting *semihosting = target->semihosting;
+	if (semihosting)
+		semihosting->setup_time = clock();
+
+	return ERROR_OK;
+}
+
+static int vexriscv_semihosting_post_result(struct target *target)
+{
+	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+    
+	struct semihosting *semihosting = target->semihosting;
+	if (!semihosting) {
+		/* If not enabled, silently ignored. */
+		return 0;
+	}
+
+	LOG_DEBUG("0x%" PRIx64, semihosting->result);
+
+    vexriscv_set_core_reg(&vexriscv->core_cache->reg_list[10], (uint8_t*) &semihosting->result);
+        
+	return 0;
+}
+
 
 static int vexriscv_get_gdb_reg_list(struct target *target, struct reg **reg_list[],
 			  int *reg_list_size, enum target_register_class reg_class)
@@ -1753,6 +1940,56 @@ COMMAND_HANDLER(vexriscv_handle_networkProtocol_command)
 	return ERROR_OK;
 }
 
+extern __COMMAND_HANDLER(handle_common_semihosting_command);
+extern __COMMAND_HANDLER(handle_common_semihosting_fileio_command);
+extern __COMMAND_HANDLER(handle_common_semihosting_resumable_exit_command);
+extern __COMMAND_HANDLER(handle_common_semihosting_cmdline);
+
+/*
+ * To be noted that RISC-V targets use the same semihosting commands as
+ * ARM targets.
+ *
+ * The main reason is compatibility with existing tools. For example the
+ * Eclipse OpenOCD/SEGGER J-Link/QEMU plug-ins have several widgets to
+ * configure semihosting, which generate commands like `arm semihosting
+ * enable`.
+ * A secondary reason is the fact that the protocol used is exactly the
+ * one specified by ARM. If RISC-V will ever define its own semihosting
+ * protocol, then a command like `riscv semihosting enable` will make
+ * sense, but for now all semihosting commands are prefixed with `arm`.
+ */
+static const struct command_registration arm_exec_command_handlers[] = {
+	{
+		"semihosting",
+		.handler = handle_common_semihosting_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['enable'|'disable']",
+		.help = "activate support for semihosting operations",
+	},
+	{
+		"semihosting_cmdline",
+		.handler = handle_common_semihosting_cmdline,
+		.mode = COMMAND_EXEC,
+		.usage = "arguments",
+		.help = "command line arguments to be passed to program",
+	},
+	{
+		"semihosting_fileio",
+		.handler = handle_common_semihosting_fileio_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['enable'|'disable']",
+		.help = "activate support for semihosting fileio operations",
+	},
+	{
+		"semihosting_resexit",
+		.handler = handle_common_semihosting_resumable_exit_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['enable'|'disable']",
+		.help = "activate support for semihosting resumable exit",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
 static const struct command_registration vexriscv_exec_command_handlers[] = {
 		{
 			.name = "readWaitCycles",
@@ -1790,6 +2027,13 @@ const struct command_registration vexriscv_command_handlers[] = {
 		.usage = "",
 		.chain = vexriscv_exec_command_handlers,
 	},
+	{
+		.name = "arm",
+		.mode = COMMAND_ANY,
+		.help = "ARM Command Group",
+		.usage = "",
+		.chain = arm_exec_command_handlers
+	},    
 	COMMAND_REGISTRATION_DONE
 };
 
