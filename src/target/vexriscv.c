@@ -1001,6 +1001,7 @@ static int vexriscv_assert_reset(struct target *target)
 		return error;
 	}
 
+
 	// Resetting the CPU causes the program counter to jump to the reset vector.
 	// Our copy is no longer valid.
 	vexriscv->regs->pc.valid = false;
@@ -1017,6 +1018,9 @@ static int vexriscv_deassert_reset(struct target *target)
 	if ((error = vexriscv_writeStatusRegister(target, true, vexriscv_FLAGS_RESET_CLEAR)) != ERROR_OK) {
 		return error;
 	}
+
+	usleep(200000);
+
 	uint32_t isRunning;
 	if(vexriscv_is_running(target,&isRunning)) return ERROR_FAIL;
 	target->state = isRunning ? TARGET_RUNNING : TARGET_HALTED;
@@ -1775,6 +1779,8 @@ static int vexriscv_soft_reset_halt(struct target *target)
 		LOG_ERROR("Error while soft_reset_halt the CPU");
 		return error;
 	}
+
+	usleep(200000);
 
 	target->state = TARGET_HALTED;
 	return ERROR_OK;
