@@ -1865,6 +1865,8 @@ int vexriscv_run_algorithm(struct target *target, int num_mem_params,
 		}
 	}
 
+	vexriscv_flush_caches(target); //Ensure instruction cache is in sync with recently written program
+
 	for (int i = 0; i < num_reg_params; i++) {
 		struct reg *reg = register_get_by_name(vexriscv->core_cache, reg_params[i].reg_name, 0);
 
