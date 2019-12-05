@@ -15,12 +15,16 @@
 #include "vexriscv.h"
 #include "semihosting_common.h"
 #include <stdio.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <string.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <netinet/tcp.h>
+#endif
+#include <string.h>
+#include <fcntl.h>
 #include <yaml.h>
 #include <errno.h>
 #include "algorithm.h"
@@ -1040,7 +1044,7 @@ static int vexriscv_network_read(struct vexriscv_common *vexriscv, void *buffer,
 		if (ret != sizeof(wb_buffer))
 			return 0;
 		memcpy(&intermediate, &wb_buffer[16], sizeof(intermediate));
-		intermediate = be32toh(intermediate);
+		intermediate = ntohl(intermediate);
 		memcpy(buffer, &intermediate, sizeof(intermediate));
 		return 4;
 	}
@@ -1085,15 +1089,15 @@ static int vexriscv_network_write(struct vexriscv_common *vexriscv, int is_read,
 
 		if (is_read) {
 			wb_buffer[11] = 1;	// Read count
-			data = htobe32(address);
+			data = htonl(address);
 			memcpy(&wb_buffer[16], &data, sizeof(data));
 		}
 		else {
 			wb_buffer[10] = 1;	// Write count
-			address = htobe32(address);
+			address = htonl(address);
 			memcpy(&wb_buffer[12], &address, sizeof(address));
 
-			data = htobe32(data);
+			data = htonl(data);
 			memcpy(&wb_buffer[16], &data, sizeof(data));
 		}
 		return write(vexriscv->clientSocket, wb_buffer, sizeof(wb_buffer));

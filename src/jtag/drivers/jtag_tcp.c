@@ -24,14 +24,18 @@
 
 #include <jtag/interface.h>
 #include <stdio.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <string.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <sys/ioctl.h>
-#include "hello.h"
 #include <netinet/tcp.h>
+#endif
+#include <string.h>
+#include <fcntl.h>
+#include "hello.h"
 
 /* my private tap controller state, which tracks state for calling code */
 static tap_state_t jtag_tcp_state;
