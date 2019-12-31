@@ -233,8 +233,7 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 		vexriscv_nor_spi_spiWriteVolatileConfig(bank,0x83);
 
 
-		bank->size = 0;
-		bank->num_sectors = 64;
+		bank->num_sectors = bank->size/(64*1024);
 		uint32_t offset = 0;
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 		for (int i = 0; i < bank->num_sectors; i++) {
