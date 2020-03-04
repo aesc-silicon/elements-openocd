@@ -826,7 +826,7 @@ int vexriscv_semihosting(struct target *target, int *retval)
 
 	uint8_t tmp[12];
 	/* Read the current instruction, including the bracketing */
-    /*int result =*/ vexriscv_read_memory(target, pc-4, sizeof(uint32_t), 3, tmp);
+    /*int result =*/ vexriscv_read_memory(target, pc-4, sizeof(uint16_t), 6, tmp);
 
     // todo error handling
 
