@@ -254,8 +254,33 @@ static int jtag_tcp_stableclocks(int num_cycles)
 		return ERROR_FAIL;
 
 	return ERROR_OK;
+
 }
 
+static int jtag_tcp_runtest(int num_cycles)
+{
+
+	int i;
+	uint8_t txBuffer[num_cycles*2];
+
+	/* Move to the run-test / idle state */
+	jtag_tcp_end_state(TAP_IDLE);
+	if (jtag_tcp_state_move(0) != ERROR_OK)
+		return ERROR_FAIL;
+	
+	/* send num_cycles clocks onto the cable and stay in run-test */
+	for (i = 0; i < num_cycles; i++) {
+		txBuffer[i*2 + 0] = 0;
+		txBuffer[i*2 + 1] = 0 | TCK_SET;
+	}
+
+	/* Send the cycles */
+	if(send(clientSocket,txBuffer,num_cycles*2, 0) <= 0)
+		return ERROR_FAIL;
+  
+	return ERROR_OK;
+	
+}
 
 int jtag_tcp_execute_queue(void)
 {
@@ -290,11 +315,11 @@ int jtag_tcp_execute_queue(void)
 		case JTAG_STABLECLOCKS:
 			retval = jtag_tcp_stableclocks(cmd->cmd.stableclocks->num_cycles);
 			break;
-			/*
 		case JTAG_RUNTEST:
-			retval = jtag_vpi_runtest(cmd->cmd.runtest->num_cycles,
-						  cmd->cmd.runtest->end_state);
+		        retval = jtag_tcp_runtest(cmd->cmd.runtest->num_cycles);
+		  
 			break;
+                        /*
 		case JTAG_PATHMOVE:
 			retval = jtag_vpi_path_move(cmd->cmd.pathmove);
 			break;
