@@ -68,6 +68,12 @@ struct vexriscv_common {
 	int hardwareBreakpointsCount;
 	bool *hardwareBreakpointUsed;
 	uint32_t bridgeInstruction;
+    uint32_t jtagRspInstruction;
+    uint32_t jtagRspHeader;
+    uint32_t jtagRspHeaderSize;
+    uint32_t jtagCmdInstruction;
+    uint32_t jtagCmdHeader;
+    uint32_t jtagCmdHeaderSize;
 };
 
 static inline struct vexriscv_common *
@@ -199,7 +205,17 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
 	vexriscv->dbgBase = target->dbgbase;
 	vexriscv->tap = target->tap;
 	vexriscv->clientSocket = 0;
-	vexriscv->readWaitCycles = 10;
+    vexriscv->readWaitCycles = 10;
+
+
+    vexriscv->jtagCmdInstruction = 2;
+    vexriscv->jtagRspInstruction = 3;
+    vexriscv->jtagCmdHeader = 0;
+    vexriscv->jtagRspHeader = 0;
+    vexriscv->jtagCmdHeaderSize = 0;
+    vexriscv->jtagRspHeaderSize = 0;
+
+
 	vexriscv->targetAddress = "127.0.0.1";
 	vexriscv->networkProtocol = NP_IVERILOG;
 	vexriscv_create_reg_list(target);
@@ -392,7 +408,7 @@ static void vexriscv_set_instr(struct target *target, uint32_t new_instr)
 	struct scan_field field;
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
-	if(new_instr == vexriscv->bridgeInstruction) return;
+	if(new_instr == vexriscv->bridgeInstruction && !target->tap->bypass) return;
 	vexriscv->bridgeInstruction = new_instr;
 	field.num_bits = tap->ir_length;
 	uint8_t *t = calloc(DIV_ROUND_UP(field.num_bits, 8), 1);
@@ -1111,7 +1127,7 @@ static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t
 	struct scan_field field;
 	uint8_t cmd[10];
 
-	if(!vexriscv->useTCP) vexriscv_set_instr(target, 0x2);
+	if(!vexriscv->useTCP) vexriscv_set_instr(target, vexriscv->jtagCmdInstruction);
 
 	uint8_t inst = 0x00;
 	switch(size){
@@ -1134,13 +1150,16 @@ static void vexriscv_memory_cmd(struct target *target, uint32_t address,uint32_t
 	}
     uint8_t write = read ? 0 : 1;
     uint32_t waitCycles = 0;
-	field.num_bits = 8+32+32+1+2 + waitCycles;
+	field.num_bits = 8+32+32+1+2+vexriscv->jtagCmdHeaderSize + waitCycles;
 	field.out_value = cmd;
-	bit_copy(cmd,0,&inst,0,8);
-	bit_copy(cmd,8 + waitCycles,(uint8_t*)&address,0,32);
-	bit_copy(cmd,40 + waitCycles,(uint8_t*)&data,0,32);
-	bit_copy(cmd,72 + waitCycles,&write,0,1);
-	bit_copy(cmd,73 + waitCycles,(uint8_t*)&size,0,2);
+	uint32_t offset = 0;
+
+    bit_copy(cmd,offset,(uint8_t*)&vexriscv->jtagCmdHeader,0,vexriscv->jtagCmdHeaderSize); offset += vexriscv->jtagCmdHeaderSize;
+	bit_copy(cmd,offset,&inst,0,8); offset += 8 + waitCycles;
+	bit_copy(cmd,offset,(uint8_t*)&address,0,32); offset += 32;
+	bit_copy(cmd,offset,(uint8_t*)&data,0,32); offset += 32;
+	bit_copy(cmd,offset,&write,0,1); offset += 1;
+	bit_copy(cmd,offset ,(uint8_t*)&size,0,2); offset += 2;
 	field.in_value = NULL;
 	field.check_value = NULL;
 	field.check_mask = NULL;
@@ -1160,8 +1179,12 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value, uint32_t siz
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
 	struct scan_field feilds[3];
-	feilds[0].num_bits = 2; //TODO !!!
-	feilds[0].out_value = NULL;
+    uint8_t header[10];
+    bit_copy(header,0,(uint8_t*)&vexriscv->jtagRspHeader,0,vexriscv->jtagRspHeaderSize);
+
+
+	feilds[0].num_bits = 2+vexriscv->jtagRspHeaderSize; //TODO !!!
+	feilds[0].out_value = header;
 	feilds[0].in_value = NULL;
 	feilds[0].check_value = NULL;
 	feilds[0].check_mask = NULL;
@@ -1180,7 +1203,7 @@ static void vexriscv_read_rsp(struct target *target,uint8_t *value, uint32_t siz
 
 	if(!vexriscv->useTCP) {
 		jtag_add_clocks(vexriscv->readWaitCycles);
-		vexriscv_set_instr(target, 0x03);
+		vexriscv_set_instr(target, vexriscv->jtagRspInstruction);
 		jtag_add_dr_scan(tap, size == 4 ? 2 : 3, feilds, TAP_IDLE);
 	} else {
 		uint32_t buffer;
@@ -1902,6 +1925,8 @@ int vexriscv_run_algorithm(struct target *target, int num_mem_params,
 	return ERROR_OK;
 }
 
+
+
 COMMAND_HANDLER(vexriscv_handle_readWaitCycles_command)
 {
 	if(CMD_ARGC != 1)
@@ -1910,6 +1935,21 @@ COMMAND_HANDLER(vexriscv_handle_readWaitCycles_command)
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], vexriscv->readWaitCycles);
 	return ERROR_OK;
+}
+
+COMMAND_HANDLER(vexriscv_handle_jtagMapping_command)
+{
+    if(CMD_ARGC != 6)
+        return ERROR_COMMAND_ARGUMENT_INVALID;
+    struct target* target = get_current_target(CMD_CTX);
+    struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+    COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], vexriscv->jtagCmdInstruction);
+    COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], vexriscv->jtagRspInstruction);
+    COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], vexriscv->jtagCmdHeader);
+    COMMAND_PARSE_NUMBER(u32, CMD_ARGV[3], vexriscv->jtagRspHeader);
+    COMMAND_PARSE_NUMBER(u32, CMD_ARGV[4], vexriscv->jtagCmdHeaderSize);
+    COMMAND_PARSE_NUMBER(u32, CMD_ARGV[5], vexriscv->jtagRspHeaderSize);
+    return ERROR_OK;
 }
 
 COMMAND_HANDLER(vexriscv_handle_cpuConfigFile_command)
@@ -1999,6 +2039,13 @@ static const struct command_registration arm_exec_command_handlers[] = {
 };
 
 static const struct command_registration vexriscv_exec_command_handlers[] = {
+        {
+            .name = "jtagMapping",
+            .handler = vexriscv_handle_jtagMapping_command,
+            .mode = COMMAND_CONFIG,
+            .help = "Specify the JTAG instructions used for cmd/rsp transactions and their DR_SHIFT header, default 2 3 0 0 0 0",
+            .usage = "cmdInstruction rspInstruction cmdHeader rspHeader cmdHeaderSize rspHeaderSize",
+        },
 		{
 			.name = "readWaitCycles",
 			.handler = vexriscv_handle_readWaitCycles_command,
