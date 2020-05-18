@@ -26,6 +26,7 @@ noinst_LTLIBRARIES += %D%/libtarget.la
 	$(INTEL_IA32_SRC) \
 	$(ESIRISC_SRC) \
         $(ARC_SRC) \
+	$(VEXRISCV_SRC) \
 	%D%/avrt.c \
 	%D%/dsp563xx.c \
 	%D%/dsp563xx_once.c \
@@ -51,6 +52,9 @@ TARGET_CORE_SRC = \
 	%D%/smp.c \
 	%D%/rtt.c
 
+VEXRISCV_SRC = \
+	%D%/vexriscv.c
+	
 ARMV4_5_SRC = \
 	%D%/armv4_5.c \
 	%D%/armv4_5_mmu.c \
@@ -262,6 +266,7 @@ ARC_SRC = \
 	%D%/arc_jtag.h \
 	%D%/arc_mem.h \
 	%D%/rtt.h
+	%D%/vexriscv.h
 
 include %D%/openrisc/Makefile.am
 include %D%/riscv/Makefile.am

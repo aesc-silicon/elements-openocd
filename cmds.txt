@@ -1,0 +1,9 @@
+./bootstrap
+./configure --enable-dummy  --enable-jtag_vpi  --enable-ftdi
+make
+sudo make install
+
+-f ../tcl/interface/ftdi/ft2232h_breakout.cfg -f ../tcl/target/riscv_spinal.cfg -d 3
+
+eclipse-cpp-helios-SR2-linux-gtk-x86_64.tar
+Install new software => http://opensource.zylin.com/zylincdt

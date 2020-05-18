@@ -73,6 +73,7 @@ endif
 if DUMMY
 DRIVERFILES += %D%/dummy.c
 endif
+DRIVERFILES += %D%/jtag_tcp.c
 if FTDI
 DRIVERFILES += %D%/ftdi.c %D%/mpsse.c
 endif
