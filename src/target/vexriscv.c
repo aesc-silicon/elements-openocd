@@ -412,7 +412,7 @@ static void vexriscv_set_instr(struct target *target, uint32_t new_instr)
 	struct scan_field field;
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
 	struct jtag_tap *tap = target->tap;
-	if(new_instr == vexriscv->bridgeInstruction && !target->tap->bypass) return;
+	if(!target->tap->bypass && buf_get_u32(target->tap->cur_instr, 0, target->tap->ir_length) == new_instr) return;
 	vexriscv->bridgeInstruction = new_instr;
 	field.num_bits = tap->ir_length;
 	uint8_t *t = calloc(DIV_ROUND_UP(field.num_bits, 8), 1);
