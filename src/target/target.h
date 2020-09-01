@@ -32,10 +32,12 @@
 #define OPENOCD_TARGET_TARGET_H
 
 #include <helper/list.h>
+#include <jim.h>
 
 struct reg;
 struct trace;
 struct command_context;
+struct command_invocation;
 struct breakpoint;
 struct watchpoint;
 struct mem_param;
@@ -84,7 +86,8 @@ enum target_debug_reason {
 	DBG_REASON_SINGLESTEP = 4,
 	DBG_REASON_NOTHALTED = 5,
 	DBG_REASON_EXIT = 6,
-	DBG_REASON_UNDEFINED = 7,
+	DBG_REASON_EXC_CATCH = 7,
+	DBG_REASON_UNDEFINED = 8,
 };
 
 enum target_endianness {
@@ -256,6 +259,8 @@ enum target_event {
 	TARGET_EVENT_RESUMED,		/* target resumed to normal execution */
 	TARGET_EVENT_RESUME_START,
 	TARGET_EVENT_RESUME_END,
+	TARGET_EVENT_STEP_START,
+	TARGET_EVENT_STEP_END,
 
 	TARGET_EVENT_GDB_START, /* debugger started execution (step/run) */
 	TARGET_EVENT_GDB_END, /* debugger stopped execution (step/run) */
@@ -273,6 +278,7 @@ enum target_event {
 	TARGET_EVENT_DEBUG_RESUMED, /* target resumed to execute on behalf of the debugger */
 
 	TARGET_EVENT_EXAMINE_START,
+	TARGET_EVENT_EXAMINE_FAIL,
 	TARGET_EVENT_EXAMINE_END,
 
 	TARGET_EVENT_GDB_ATTACH,
@@ -288,9 +294,8 @@ enum target_event {
 
 struct target_event_action {
 	enum target_event event;
-	struct Jim_Interp *interp;
-	struct Jim_Obj *body;
-	int has_percent;
+	Jim_Interp *interp;
+	Jim_Obj *body;
 	struct target_event_action *next;
 };
 
@@ -314,10 +319,15 @@ struct target_trace_callback {
 	int (*callback)(struct target *target, size_t len, uint8_t *data, void *priv);
 };
 
+enum target_timer_type {
+	TARGET_TIMER_TYPE_ONESHOT,
+	TARGET_TIMER_TYPE_PERIODIC
+};
+
 struct target_timer_callback {
 	int (*callback)(void *priv);
-	int time_ms;
-	int periodic;
+	unsigned int time_ms;
+	enum target_timer_type type;
 	bool removed;
 	struct timeval when;
 	void *priv;
@@ -385,7 +395,7 @@ int target_call_trace_callbacks(struct target *target, size_t len, uint8_t *data
  * or much more rarely than specified
  */
 int target_register_timer_callback(int (*callback)(void *priv),
-		int time_ms, int periodic, void *priv);
+		unsigned int time_ms, enum target_timer_type type, void *priv);
 int target_unregister_timer_callback(int (*callback)(void *priv), void *priv);
 int target_call_timer_callbacks(void);
 /**
@@ -493,6 +503,16 @@ const char *target_get_gdb_arch(struct target *target);
  * This routine is a wrapper for target->type->get_gdb_reg_list.
  */
 int target_get_gdb_reg_list(struct target *target,
+		struct reg **reg_list[], int *reg_list_size,
+		enum target_register_class reg_class);
+
+/**
+ * Obtain the registers for GDB, but don't read register values from the
+ * target.
+ *
+ * This routine is a wrapper for target->type->get_gdb_reg_list_noread.
+ */
+int target_get_gdb_reg_list_noread(struct target *target,
 		struct reg **reg_list[], int *reg_list_size,
 		enum target_register_class reg_class);
 
@@ -636,7 +656,17 @@ int target_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fi
  */
 int target_gdb_fileio_end(struct target *target, int retcode, int fileio_errno, bool ctrl_c);
 
+/**
+ * Return the highest accessible address for this target.
+ */
+target_addr_t target_address_max(struct target *target);
 
+/**
+ * Return the number of address bits this target supports.
+ *
+ * This routine is a wrapper for target->type->address_bits.
+ */
+unsigned target_address_bits(struct target *target);
 
 /** Return the *name* of this targets current state */
 const char *target_state_name(struct target *target);
@@ -714,6 +744,10 @@ int target_arch_state(struct target *target);
 
 void target_handle_event(struct target *t, enum target_event e);
 
+void target_handle_md_output(struct command_invocation *cmd,
+	struct target *target, target_addr_t address, unsigned size,
+	unsigned count, const uint8_t *buffer);
+
 #define ERROR_TARGET_INVALID	(-300)
 #define ERROR_TARGET_INIT_FAILED (-301)
 #define ERROR_TARGET_TIMEOUT	(-302)
@@ -725,6 +759,8 @@ void target_handle_event(struct target *t, enum target_event e);
 #define ERROR_TARGET_TRANSLATION_FAULT	(-309)
 #define ERROR_TARGET_NOT_RUNNING (-310)
 #define ERROR_TARGET_NOT_EXAMINED (-311)
+#define ERROR_TARGET_DUPLICATE_BREAKPOINT (-312)
+#define ERROR_TARGET_ALGO_EXIT  (-313)
 
 extern bool get_target_reset_nag(void);
 

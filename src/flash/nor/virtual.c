@@ -75,39 +75,33 @@ FLASH_BANK_COMMAND_HANDLER(virtual_flash_bank_command)
 	return ERROR_OK;
 }
 
-static int virtual_protect(struct flash_bank *bank, int set, int first, int last)
+static int virtual_protect(struct flash_bank *bank, int set, unsigned int first,
+		unsigned int last)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
-	int retval;
 
 	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
-	/* call master handler */
-	retval = master_bank->driver->protect(master_bank, set, first, last);
-	if (retval != ERROR_OK)
-		return retval;
-
-	return ERROR_OK;
+	return flash_driver_protect(master_bank, set, first, last);
 }
 
 static int virtual_protect_check(struct flash_bank *bank)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
-	int retval;
 
 	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
-	/* call master handler */
-	retval = master_bank->driver->protect_check(master_bank);
-	if (retval != ERROR_OK)
-		return retval;
+	if (master_bank->driver->protect_check == NULL)
+		return ERROR_FLASH_OPER_UNSUPPORTED;
 
-	return ERROR_OK;
+	/* call master handler */
+	return master_bank->driver->protect_check(master_bank);
 }
 
-static int virtual_erase(struct flash_bank *bank, int first, int last)
+static int virtual_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	struct flash_bank *master_bank = virtual_get_master_bank(bank);
 	int retval;
@@ -185,7 +179,7 @@ static int virtual_info(struct flash_bank *bank, char *buf, int buf_size)
 	if (master_bank == NULL)
 		return ERROR_FLASH_OPERATION_FAILED;
 
-	snprintf(buf, buf_size, "%s driver for flash bank %s at 0x%8.8" PRIx32 "",
+	snprintf(buf, buf_size, "%s driver for flash bank %s at " TARGET_ADDR_FMT,
 			bank->driver->name, master_bank->name, master_bank->base);
 
 	return ERROR_OK;
@@ -224,7 +218,7 @@ static int virtual_flash_read(struct flash_bank *bank,
 	return ERROR_OK;
 }
 
-struct flash_driver virtual_flash = {
+const struct flash_driver virtual_flash = {
 	.name = "virtual",
 	.flash_bank_command = virtual_flash_bank_command,
 	.erase = virtual_erase,

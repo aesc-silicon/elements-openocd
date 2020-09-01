@@ -389,14 +389,15 @@ static const struct command_registration jtag_tcp_command_handlers[] = {
 /* The jtag_tcp driver is used to easily check the code path
  * where the target is unresponsive.
  */
-struct jtag_interface jtag_tcp_interface = {
+static struct jtag_interface jtag_tcp_interface = {
+        .supported = DEBUG_CAP_TMS_SEQ,
+        .execute_queue = &jtag_tcp_execute_queue
+};
+struct adapter_driver jtag_tcp_adapter_driver = {
 		.name = "jtag_tcp",
 
-		.supported = DEBUG_CAP_TMS_SEQ,
 		.commands = jtag_tcp_command_handlers,
 		.transports = jtag_only,
-
-		.execute_queue = &jtag_tcp_execute_queue,
 
 		.speed = &jtag_tcp_speed,
 		.khz = &jtag_tcp_khz,
@@ -404,4 +405,7 @@ struct jtag_interface jtag_tcp_interface = {
 
 		.init = &jtag_tcp_init,
 		.quit = &jtag_tcp_quit,
+
+	    .jtag_ops = &jtag_tcp_interface,
+	    .swd_ops = NULL,
 	};

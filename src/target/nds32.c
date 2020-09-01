@@ -1711,8 +1711,8 @@ int nds32_cache_sync(struct target *target, target_addr_t address, uint32_t leng
 		/* (address + length - 1) / dcache_line_size */
 		end_line = (address + length - 1) >> (dcache->line_size + 2);
 
-		for (cur_address = address, cur_line = start_line ;
-				cur_line <= end_line ;
+		for (cur_address = address, cur_line = start_line;
+				cur_line <= end_line;
 				cur_address += dcache_line_size, cur_line++) {
 			/* D$ write back */
 			result = aice_cache_ctl(aice, AICE_CACHE_CTL_L1D_VA_WB, cur_address);
@@ -1732,8 +1732,8 @@ int nds32_cache_sync(struct target *target, target_addr_t address, uint32_t leng
 		/* (address + length - 1) / icache_line_size */
 		end_line = (address + length - 1) >> (icache->line_size + 2);
 
-		for (cur_address = address, cur_line = start_line ;
-				cur_line <= end_line ;
+		for (cur_address = address, cur_line = start_line;
+				cur_line <= end_line;
 				cur_address += icache_line_size, cur_line++) {
 			/* Because PSW.IT is turned off under debug exception, address MUST
 			 * be physical address.  L1I_VA_INVALIDATE uses PSW.IT to decide
@@ -2361,7 +2361,7 @@ int nds32_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fil
 				fileio_info->param_4 = reg_r2;
 
 				target->type->read_buffer(target, reg_r0, 256, filename);
-				fileio_info->param_2 = strlen((char *)filename) + 1;
+				fileio_info->param_2 = strlen((char *)filename);
 			}
 			break;
 		case NDS32_SYSCALL_CLOSE:
@@ -2399,7 +2399,7 @@ int nds32_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fil
 				/* reserve fileio_info->param_2 for length of path */
 
 				target->type->read_buffer(target, reg_r0, 256, filename);
-				fileio_info->param_2 = strlen((char *)filename) + 1;
+				fileio_info->param_2 = strlen((char *)filename);
 			}
 			break;
 		case NDS32_SYSCALL_RENAME:
@@ -2413,10 +2413,10 @@ int nds32_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fil
 				/* reserve fileio_info->param_4 for length of new path */
 
 				target->type->read_buffer(target, reg_r0, 256, filename);
-				fileio_info->param_2 = strlen((char *)filename) + 1;
+				fileio_info->param_2 = strlen((char *)filename);
 
 				target->type->read_buffer(target, reg_r1, 256, filename);
-				fileio_info->param_4 = strlen((char *)filename) + 1;
+				fileio_info->param_4 = strlen((char *)filename);
 			}
 			break;
 		case NDS32_SYSCALL_FSTAT:
@@ -2458,7 +2458,7 @@ int nds32_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fil
 				/* reserve fileio_info->param_2 for length of old path */
 
 				target->type->read_buffer(target, reg_r0, 256, command);
-				fileio_info->param_2 = strlen((char *)command) + 1;
+				fileio_info->param_2 = strlen((char *)command);
 			}
 			break;
 		case NDS32_SYSCALL_ERRNO:

@@ -99,7 +99,7 @@ static int or1k_tap_vjtag_init(struct or1k_jtag *jtag_info)
 
 	/* You can use a custom JTAG controller to discover transactions
 	 * necessary to enumerate all Virtual JTAG megafunction instances
-	 * from your design atruntime. All SLD nodes and the virtual JTAG
+	 * from your design at runtime. All SLD nodes and the virtual JTAG
 	 * registers that they contain are targeted by two Instruction Register
 	 * values, USER0 and USER1.
 	 *
@@ -149,7 +149,7 @@ static int or1k_tap_vjtag_init(struct or1k_jtag *jtag_info)
 	 * into the USER1 DR is sufficient to cover the most conservative case for m and n.
 	 */
 
-	uint8_t t[4];
+	uint8_t t[4] = { 0 };
 	struct scan_field field;
 	struct jtag_tap *tap = jtag_info->tap;
 

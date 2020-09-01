@@ -82,6 +82,7 @@
  * - 822 | 4 (tested with LPC824)
  * - 8N04
  * - NHS31xx (tested with NHS3100)
+ * - 844 | 5 (tested with LPC845)
  *
  * lpc1100:
  * - 11xx
@@ -269,6 +270,15 @@
 #define NHS3152        0x4e315220
 #define NHS3153        0x4e315320 /* Only specified in Rev.1 of the datasheet */
 
+#define LPC844_201     0x00008441
+#define LPC844_201_1   0x00008442
+#define LPC844_201_2   0x00008444
+
+#define LPC845_301     0x00008451
+#define LPC845_301_1   0x00008452
+#define LPC845_301_2   0x00008453
+#define LPC845_301_3   0x00008454
+
 #define IAP_CODE_LEN 0x34
 
 #define LPC11xx_REG_SECTORS	24
@@ -294,6 +304,7 @@ struct lpc2000_flash_bank {
 	int checksum_vector;
 	uint32_t iap_max_stack;
 	uint32_t lpc4300_bank;
+	uint32_t iap_entry_alternative;
 	bool probed;
 };
 
@@ -421,7 +432,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			if (i < 8) {
 				bank->sectors[i].offset = offset;
 				bank->sectors[i].size = 4 * 1024;
@@ -483,7 +494,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			bank->sectors[i].offset = offset;
 			/* sectors 0-15 are 4kB-sized, 16 and above are 32kB-sized for LPC17xx/LPC40xx devices */
 			bank->sectors[i].size = (i < 16) ? 4 * 1024 : 32 * 1024;
@@ -513,7 +524,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			bank->sectors[i].offset = offset;
 			/* sectors 0-7 are 8kB-sized, 8 and above are 64kB-sized for LPC43xx devices */
 			bank->sectors[i].size = (i < 8) ? 8 * 1024 : 64 * 1024;
@@ -546,6 +557,10 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 				lpc2000_info->cmd51_max_buffer = 1024; /* For LPC824, has 8kB of SRAM */
 				bank->num_sectors = 32;
 				break;
+			case 64 * 1024:
+				lpc2000_info->cmd51_max_buffer = 1024; /* For LPC844, has 8kB of SRAM */
+				bank->num_sectors = 64;
+				break;
 			default:
 				LOG_ERROR("BUG: unknown bank->size encountered");
 				exit(-1);
@@ -553,7 +568,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			bank->sectors[i].offset = offset;
 			/* all sectors are 1kB-sized for LPC8xx devices */
 			bank->sectors[i].size = 1 * 1024;
@@ -584,7 +599,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			bank->sectors[i].offset = offset;
 			bank->sectors[i].size = (i < LPC11xx_REG_SECTORS ? 4 : 32) * 1024;
 			offset += bank->sectors[i].size;
@@ -614,7 +629,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			bank->sectors[i].offset = offset;
 			/* all sectors are 4kB-sized */
 			bank->sectors[i].size = 4 * 1024;
@@ -642,7 +657,7 @@ static int lpc2000_build_sector_list(struct flash_bank *bank)
 
 		bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
 
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			bank->sectors[i].offset = offset;
 			/* all sectors are 32kB-sized */
 			bank->sectors[i].size = 32 * 1024;
@@ -704,7 +719,7 @@ static int lpc2000_iap_working_area_init(struct flash_bank *bank, struct working
 
 	int retval = target_write_memory(target, (*iap_working_area)->address, 4, 2, jump_gate);
 	if (retval != ERROR_OK) {
-		LOG_ERROR("Write memory at address 0x%8.8" TARGET_PRIxADDR " failed (check work_area definition)",
+		LOG_ERROR("Write memory at address " TARGET_ADDR_FMT " failed (check work_area definition)",
 				(*iap_working_area)->address);
 		target_free_working_area(target, *iap_working_area);
 	}
@@ -756,6 +771,9 @@ static int lpc2000_iap_call(struct flash_bank *bank, struct working_area *iap_wo
 			LOG_ERROR("BUG: unknown lpc2000->variant encountered");
 			exit(-1);
 	}
+
+	if (lpc2000_info->iap_entry_alternative != 0x0)
+		iap_entry_point = lpc2000_info->iap_entry_alternative;
 
 	struct mem_param mem_params[2];
 
@@ -845,9 +863,10 @@ static int lpc2000_iap_call(struct flash_bank *bank, struct working_area *iap_wo
 	return status_code;
 }
 
-static int lpc2000_iap_blank_check(struct flash_bank *bank, int first, int last)
+static int lpc2000_iap_blank_check(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
-	if ((first < 0) || (last >= bank->num_sectors))
+	if (last >= bank->num_sectors)
 		return ERROR_FLASH_SECTOR_INVALID;
 
 	uint32_t param_table[5] = {0};
@@ -863,7 +882,7 @@ static int lpc2000_iap_blank_check(struct flash_bank *bank, int first, int last)
 	if (lpc2000_info->variant == lpc4300)
 		param_table[2] = lpc2000_info->lpc4300_bank;
 
-	for (int i = first; i <= last && retval == ERROR_OK; i++) {
+	for (unsigned int i = first; i <= last && retval == ERROR_OK; i++) {
 		/* check single sector */
 		param_table[0] = param_table[1] = i;
 		int status_code = lpc2000_iap_call(bank, iap_working_area, 53, param_table, result_table);
@@ -954,11 +973,14 @@ FLASH_BANK_COMMAND_HANDLER(lpc2000_flash_bank_command)
 		if (strcmp(CMD_ARGV[8], "calc_checksum") == 0)
 			lpc2000_info->calc_checksum = 1;
 	}
+	if (CMD_ARGC >= 10 && !lpc2000_info->iap_entry_alternative)
+		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[9], lpc2000_info->iap_entry_alternative);
 
 	return ERROR_OK;
 }
 
-static int lpc2000_erase(struct flash_bank *bank, int first, int last)
+static int lpc2000_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	if (bank->target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
@@ -1058,7 +1080,7 @@ static int lpc2000_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 	int first_sector = 0;
 	int last_sector = 0;
 
-	for (int i = 0; i < bank->num_sectors; i++) {
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		if (offset >= bank->sectors[i].offset)
 			first_sector = i;
 		if (offset + DIV_ROUND_UP(count, dst_min_alignment) * dst_min_alignment > bank->sectors[i].offset)
@@ -1148,7 +1170,7 @@ static int lpc2000_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 				break;
 		}
 
-		/* Exit if error occured */
+		/* Exit if error occurred */
 		if (retval != ERROR_OK)
 			break;
 
@@ -1166,8 +1188,8 @@ static int lpc2000_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 			free(last_buffer);
 		}
 
-		LOG_DEBUG("writing 0x%" PRIx32 " bytes to address 0x%" PRIx32, thisrun_bytes,
-				bank->base + offset + bytes_written);
+		LOG_DEBUG("writing 0x%" PRIx32 " bytes to address " TARGET_ADDR_FMT,
+				thisrun_bytes, bank->base + offset + bytes_written);
 
 		/* Write data */
 		param_table[0] = bank->base + offset + bytes_written;
@@ -1190,7 +1212,7 @@ static int lpc2000_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 				break;
 		}
 
-		/* Exit if error occured */
+		/* Exit if error occurred */
 		if (retval != ERROR_OK)
 			break;
 
@@ -1476,6 +1498,17 @@ static int lpc2000_auto_probe_flash(struct flash_bank *bank)
 			bank->size = 30 * 1024;
 			break;
 
+		case LPC844_201:
+		case LPC844_201_1:
+		case LPC844_201_2:
+		case LPC845_301:
+		case LPC845_301_1:
+		case LPC845_301_2:
+		case LPC845_301_3:
+			lpc2000_info->variant = lpc800;
+			bank->size = 64 * 1024;
+			break;
+
 		default:
 			LOG_ERROR("BUG: unknown Part ID encountered: 0x%" PRIx32, part_id);
 			exit(-1);
@@ -1548,11 +1581,11 @@ COMMAND_HANDLER(lpc2000_handle_part_id_command)
 	int status_code = get_lpc2000_part_id(bank, &part_id);
 	if (status_code != 0x0) {
 		if (status_code == ERROR_FLASH_OPERATION_FAILED) {
-			command_print(CMD_CTX, "no sufficient working area specified, can't access LPC2000 IAP interface");
+			command_print(CMD, "no sufficient working area specified, can't access LPC2000 IAP interface");
 		} else
-			command_print(CMD_CTX, "lpc2000 IAP returned status code %i", status_code);
+			command_print(CMD, "lpc2000 IAP returned status code %i", status_code);
 	} else
-		command_print(CMD_CTX, "lpc2000 part id: 0x%8.8" PRIx32, part_id);
+		command_print(CMD, "lpc2000 part id: 0x%8.8" PRIx32, part_id);
 
 	return retval;
 }
@@ -1578,7 +1611,7 @@ static const struct command_registration lpc2000_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-struct flash_driver lpc2000_flash = {
+const struct flash_driver lpc2000_flash = {
 	.name = "lpc2000",
 	.commands = lpc2000_command_handlers,
 	.flash_bank_command = lpc2000_flash_bank_command,

@@ -57,13 +57,12 @@ static int aduc702x_build_sector_list(struct flash_bank *bank)
 {
 	/* aduc7026_struct flash_bank *aduc7026_info = bank->driver_priv; */
 
-	int i = 0;
 	uint32_t offset = 0;
 
 	/* sector size is 512 */
 	bank->num_sectors = bank->size / 512;
 	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	for (i = 0; i < bank->num_sectors; ++i) {
+	for (unsigned int i = 0; i < bank->num_sectors; ++i) {
 		bank->sectors[i].offset = offset;
 		bank->sectors[i].size = 512;
 		offset += bank->sectors[i].size;
@@ -74,7 +73,8 @@ static int aduc702x_build_sector_list(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int aduc702x_erase(struct flash_bank *bank, int first, int last)
+static int aduc702x_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	/* int res; */
 	int x;
@@ -378,7 +378,7 @@ static int aduc702x_check_flash_completion(struct target *target, unsigned int t
 		return ERROR_OK;
 }
 
-struct flash_driver aduc702x_flash = {
+const struct flash_driver aduc702x_flash = {
 	.name = "aduc702x",
 	.flash_bank_command = aduc702x_flash_bank_command,
 	.erase = aduc702x_erase,

@@ -52,6 +52,10 @@ struct log_capture_state {
 	Jim_Obj *output;
 };
 
+static int unregister_command(struct command_context *context,
+	struct command *parent, const char *name);
+static char *command_name(struct command *c, char delim);
+
 static void tcl_output(void *privData, const char *file, unsigned line,
 	const char *function, const char *string)
 {
@@ -126,13 +130,12 @@ extern struct command_context *global_cmd_ctx;
 
 /* dump a single line to the log for the command.
  * Do nothing in case we are not at debug level 3 */
-void script_debug(Jim_Interp *interp, const char *name,
-	unsigned argc, Jim_Obj * const *argv)
+void script_debug(Jim_Interp *interp, unsigned int argc, Jim_Obj * const *argv)
 {
 	if (debug_level < LOG_LVL_DEBUG)
 		return;
 
-	char *dbg = alloc_printf("command - %s", name);
+	char *dbg = alloc_printf("command -");
 	for (unsigned i = 0; i < argc; i++) {
 		int len;
 		const char *w = Jim_GetString(argv[i], &len);
@@ -190,7 +193,7 @@ struct command_context *current_command_context(Jim_Interp *interp)
 }
 
 static int script_command_run(Jim_Interp *interp,
-	int argc, Jim_Obj * const *argv, struct command *c, bool capture)
+	int argc, Jim_Obj * const *argv, struct command *c)
 {
 	target_call_timer_callbacks_now();
 	LOG_USER_N("%s", "");	/* Keep GDB connection alive*/
@@ -200,14 +203,8 @@ static int script_command_run(Jim_Interp *interp,
 	if (NULL == words)
 		return JIM_ERR;
 
-	struct log_capture_state *state = NULL;
-	if (capture)
-		state = command_log_capture_start(interp);
-
 	struct command_context *cmd_ctx = current_command_context(interp);
 	int retval = run_command(cmd_ctx, c, (const char **)words, nwords);
-
-	command_log_capture_finish(state);
 
 	script_command_args_free(words, nwords);
 	return command_retval_set(interp, retval);
@@ -219,8 +216,8 @@ static int script_command(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
 	struct command *c = interp->cmdPrivData;
 	assert(c);
-	script_debug(interp, c->name, argc, argv);
-	return script_command_run(interp, argc, argv, c, true);
+	script_debug(interp, argc, argv);
+	return script_command_run(interp, argc, argv, c);
 }
 
 static struct command *command_root(struct command *c)
@@ -248,11 +245,6 @@ struct command *command_find_in_context(struct command_context *cmd_ctx,
 	const char *name)
 {
 	return command_find(cmd_ctx->commands, name);
-}
-struct command *command_find_in_parent(struct command *parent,
-	const char *name)
-{
-	return command_find(parent->children, name);
 }
 
 /**
@@ -316,7 +308,7 @@ static struct command *command_new(struct command_context *cmd_ctx,
 	 * arguments.
 	*/
 	if ((cr->jim_handler == NULL) && (cr->usage == NULL)) {
-		LOG_DEBUG("BUG: command '%s%s%s' does not have the "
+		LOG_ERROR("BUG: command '%s%s%s' does not have the "
 			"'.usage' field filled out",
 			parent && parent->name ? parent->name : "",
 			parent && parent->name ? " " : "",
@@ -339,7 +331,6 @@ static struct command *command_new(struct command_context *cmd_ctx,
 	c->parent = parent;
 	c->handler = cr->handler;
 	c->jim_handler = cr->jim_handler;
-	c->jim_handler_data = cr->jim_handler_data;
 	c->mode = cr->mode;
 
 	command_add_child(command_list_for_parent(cmd_ctx, parent), c);
@@ -357,32 +348,16 @@ static int register_command_handler(struct command_context *cmd_ctx,
 	struct command *c)
 {
 	Jim_Interp *interp = cmd_ctx->interp;
-	char *ocd_name = alloc_printf("ocd_%s", c->name);
-	if (NULL == ocd_name)
-		return JIM_ERR;
 
-	LOG_DEBUG("registering '%s'...", ocd_name);
+	LOG_DEBUG("registering '%s'...", c->name);
 
 	Jim_CmdProc *func = c->handler ? &script_command : &command_unknown;
-	int retval = Jim_CreateCommand(interp, ocd_name, func, c, NULL);
-	free(ocd_name);
-	if (JIM_OK != retval)
-		return retval;
-
-	/* we now need to add an overrideable proc */
-	char *override_name = alloc_printf(
-			"proc %s {args} {eval ocd_bouncer %s $args}",
-			c->name, c->name);
-	if (NULL == override_name)
-		return JIM_ERR;
-
-	retval = Jim_Eval_Named(interp, override_name, 0, 0);
-	free(override_name);
+	int retval = Jim_CreateCommand(interp, c->name, func, c, NULL);
 
 	return retval;
 }
 
-struct command *register_command(struct command_context *context,
+static struct command *register_command(struct command_context *context,
 	struct command *parent, const struct command_registration *cr)
 {
 	if (!context || !cr->name)
@@ -404,14 +379,14 @@ struct command *register_command(struct command_context *context,
 	if (NULL == c)
 		return NULL;
 
-	int retval = ERROR_OK;
+	int retval = JIM_OK;
 	if (NULL != cr->jim_handler && NULL == parent) {
 		retval = Jim_CreateCommand(context->interp, cr->name,
-				cr->jim_handler, cr->jim_handler_data, NULL);
+				cr->jim_handler, NULL, NULL);
 	} else if (NULL != cr->handler || NULL != parent)
 		retval = register_command_handler(context, command_root(c));
 
-	if (ERROR_OK != retval) {
+	if (retval != JIM_OK) {
 		unregister_command(context, parent, name);
 		c = NULL;
 	}
@@ -464,7 +439,7 @@ int unregister_all_commands(struct command_context *context,
 	return ERROR_OK;
 }
 
-int unregister_command(struct command_context *context,
+static int unregister_command(struct command_context *context,
 	struct command *parent, const char *name)
 {
 	if ((!context) || (!name))
@@ -502,7 +477,7 @@ void command_output_text(struct command_context *context, const char *data)
 		context->output_handler(context, data);
 }
 
-void command_print_sameline(struct command_context *context, const char *format, ...)
+void command_print_sameline(struct command_invocation *cmd, const char *format, ...)
 {
 	char *string;
 
@@ -510,13 +485,13 @@ void command_print_sameline(struct command_context *context, const char *format,
 	va_start(ap, format);
 
 	string = alloc_vprintf(format, ap);
-	if (string != NULL) {
+	if (string != NULL && cmd) {
 		/* we want this collected in the log + we also want to pick it up as a tcl return
 		 * value.
 		 *
 		 * The latter bit isn't precisely neat, but will do for now.
 		 */
-		LOG_USER_N("%s", string);
+		Jim_AppendString(cmd->ctx->interp, cmd->output, string, -1);
 		/* We already printed it above
 		 * command_output_text(context, string); */
 		free(string);
@@ -525,7 +500,7 @@ void command_print_sameline(struct command_context *context, const char *format,
 	va_end(ap);
 }
 
-void command_print(struct command_context *context, const char *format, ...)
+void command_print(struct command_invocation *cmd, const char *format, ...)
 {
 	char *string;
 
@@ -533,7 +508,7 @@ void command_print(struct command_context *context, const char *format, ...)
 	va_start(ap, format);
 
 	string = alloc_vprintf(format, ap);
-	if (string != NULL) {
+	if (string != NULL && cmd) {
 		strcat(string, "\n");	/* alloc_vprintf guaranteed the buffer to be at least one
 					 *char longer */
 		/* we want this collected in the log + we also want to pick it up as a tcl return
@@ -541,7 +516,7 @@ void command_print(struct command_context *context, const char *format, ...)
 		 *
 		 * The latter bit isn't precisely neat, but will do for now.
 		 */
-		LOG_USER_N("%s", string);
+		Jim_AppendString(cmd->ctx->interp, cmd->output, string, -1);
 		/* We already printed it above
 		 * command_output_text(context, string); */
 		free(string);
@@ -557,6 +532,10 @@ static char *__command_name(struct command *c, char delim, unsigned extra)
 	if (NULL == c->parent) {
 		/* allocate enough for the name, child names, and '\0' */
 		name = malloc(len + extra + 1);
+		if (!name) {
+			LOG_ERROR("Out of memory");
+			return NULL;
+		}
 		strcpy(name, c->name);
 	} else {
 		/* parent's extra must include both the space and name */
@@ -568,38 +547,42 @@ static char *__command_name(struct command *c, char delim, unsigned extra)
 	return name;
 }
 
-char *command_name(struct command *c, char delim)
+static char *command_name(struct command *c, char delim)
 {
 	return __command_name(c, delim, 0);
 }
 
 static bool command_can_run(struct command_context *cmd_ctx, struct command *c)
 {
-	return c->mode == COMMAND_ANY || c->mode == cmd_ctx->mode;
+	if (c->mode == COMMAND_ANY || c->mode == cmd_ctx->mode)
+		return true;
+
+	/* Many commands may be run only before/after 'init' */
+	const char *when;
+	switch (c->mode) {
+		case COMMAND_CONFIG:
+			when = "before";
+			break;
+		case COMMAND_EXEC:
+			when = "after";
+			break;
+		/* handle the impossible with humor; it guarantees a bug report! */
+		default:
+			when = "if Cthulhu is summoned by";
+			break;
+	}
+	char *full_name = command_name(c, ' ');
+	LOG_ERROR("The '%s' command must be used %s 'init'.",
+			full_name ? full_name : c->name, when);
+	free(full_name);
+	return false;
 }
 
 static int run_command(struct command_context *context,
 	struct command *c, const char *words[], unsigned num_words)
 {
-	if (!command_can_run(context, c)) {
-		/* Many commands may be run only before/after 'init' */
-		const char *when;
-		switch (c->mode) {
-			case COMMAND_CONFIG:
-				when = "before";
-				break;
-			case COMMAND_EXEC:
-				when = "after";
-				break;
-			/* handle the impossible with humor; it guarantees a bug report! */
-			default:
-				when = "if Cthulhu is summoned by";
-				break;
-		}
-		LOG_ERROR("The '%s' command must be used %s 'init'.",
-			c->name, when);
+	if (!command_can_run(context, c))
 		return ERROR_FAIL;
-	}
 
 	struct command_invocation cmd = {
 		.ctx = context,
@@ -620,6 +603,9 @@ static int run_command(struct command_context *context,
 	if (c->jim_handler_data)
 		context->current_target_override = c->jim_handler_data;
 
+	cmd.output = Jim_NewEmptyStringObj(context->interp);
+	Jim_IncrRefCount(cmd.output);
+
 	int retval = c->handler(&cmd);
 
 	if (c->jim_handler_data)
@@ -631,16 +617,20 @@ static int run_command(struct command_context *context,
 		if (NULL != full_name) {
 			command_run_linef(context, "usage %s", full_name);
 			free(full_name);
-		} else
-			retval = -ENOMEM;
+		}
 	} else if (retval == ERROR_COMMAND_CLOSE_CONNECTION) {
 		/* just fall through for a shutdown request */
-	} else if (retval != ERROR_OK) {
-		/* we do not print out an error message because the command *should*
-		 * have printed out an error
-		 */
-		LOG_DEBUG("Command '%s' failed with error code %d", c->name, retval);
+	} else {
+		if (retval != ERROR_OK) {
+			char *full_name = command_name(c, ' ');
+			LOG_DEBUG("Command '%s' failed with error code %d",
+						full_name ? full_name : c->name, retval);
+			free(full_name);
+		}
+		/* Use the command output as the Tcl result */
+		Jim_SetResult(context->interp, cmd.output);
 	}
+	Jim_DecrRefCount(context->interp, cmd.output);
 
 	return retval;
 }
@@ -659,9 +649,11 @@ int command_run_line(struct command_context *context, char *line)
 	 * happen when the Jim Tcl interpreter is provided by eCos for
 	 * instance.
 	 */
+	struct target *saved_target_override = context->current_target_override;
 	context->current_target_override = NULL;
 
 	Jim_Interp *interp = context->interp;
+	struct command_context *old_context = Jim_GetAssocData(interp, "context");
 	Jim_DeleteAssocData(interp, "context");
 	retcode = Jim_SetAssocData(interp, "context", NULL, context);
 	if (retcode == JIM_OK) {
@@ -674,25 +666,19 @@ int command_run_line(struct command_context *context, char *line)
 			Jim_DeleteAssocData(interp, "retval");
 		}
 		Jim_DeleteAssocData(interp, "context");
+		int inner_retcode = Jim_SetAssocData(interp, "context", NULL, old_context);
+		if (retcode == JIM_OK)
+			retcode = inner_retcode;
 	}
+	context->current_target_override = saved_target_override;
 	if (retcode == JIM_OK) {
 		const char *result;
 		int reslen;
 
 		result = Jim_GetString(Jim_GetResult(interp), &reslen);
 		if (reslen > 0) {
-			int i;
-			char buff[256 + 1];
-			for (i = 0; i < reslen; i += 256) {
-				int chunk;
-				chunk = reslen - i;
-				if (chunk > 256)
-					chunk = 256;
-				strncpy(buff, result + i, chunk);
-				buff[chunk] = 0;
-				LOG_USER_N("%s", buff);
-			}
-			LOG_USER_N("\n");
+			command_output_text(context, result);
+			command_output_text(context, "\n");
 		}
 		retval = ERROR_OK;
 	} else if (retcode == JIM_EXIT) {
@@ -702,6 +688,7 @@ int command_run_line(struct command_context *context, char *line)
 		return retcode;
 	} else {
 		Jim_MakeErrorMessage(interp);
+		/* error is broadcast */
 		LOG_USER("%s", Jim_GetString(Jim_GetResult(interp), NULL));
 
 		if (retval == ERROR_OK) {
@@ -817,8 +804,6 @@ static COMMAND_HELPER(command_help_find, struct command *head,
 	if (0 == CMD_ARGC)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	*out = command_find(head, CMD_ARGV[0]);
-	if (NULL == *out && strncmp(CMD_ARGV[0], "ocd_", 4) == 0)
-		*out = command_find(head, CMD_ARGV[0] + 4);
 	if (NULL == *out)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	if (--CMD_ARGC == 0)
@@ -870,7 +855,7 @@ static COMMAND_HELPER(command_help_show, struct command *c, unsigned n,
 {
 	char *cmd_name = command_name(c, ' ');
 	if (NULL == cmd_name)
-		return -ENOMEM;
+		return ERROR_FAIL;
 
 	/* If the match string occurs anywhere, we print out
 	 * stuff for this command. */
@@ -972,34 +957,84 @@ COMMAND_HANDLER(handle_help_command)
 }
 
 static int command_unknown_find(unsigned argc, Jim_Obj *const *argv,
-	struct command *head, struct command **out, bool top_level)
+	struct command *head, struct command **out)
 {
 	if (0 == argc)
 		return argc;
 	const char *cmd_name = Jim_GetString(argv[0], NULL);
 	struct command *c = command_find(head, cmd_name);
-	if (NULL == c && top_level && strncmp(cmd_name, "ocd_", 4) == 0)
-		c = command_find(head, cmd_name + 4);
 	if (NULL == c)
 		return argc;
 	*out = c;
-	return command_unknown_find(--argc, ++argv, (*out)->children, out, false);
+	return command_unknown_find(--argc, ++argv, (*out)->children, out);
+}
+
+static char *alloc_concatenate_strings(int argc, Jim_Obj * const *argv)
+{
+	char *prev, *all;
+	int i;
+
+	assert(argc >= 1);
+
+	all = strdup(Jim_GetString(argv[0], NULL));
+	if (!all) {
+		LOG_ERROR("Out of memory");
+		return NULL;
+	}
+
+	for (i = 1; i < argc; ++i) {
+		prev = all;
+		all = alloc_printf("%s %s", all, Jim_GetString(argv[i], NULL));
+		free(prev);
+		if (!all) {
+			LOG_ERROR("Out of memory");
+			return NULL;
+		}
+	}
+
+	return all;
+}
+
+static int run_usage(Jim_Interp *interp, int argc_valid, int argc, Jim_Obj * const *argv)
+{
+	struct command_context *cmd_ctx = current_command_context(interp);
+	char *command;
+	int retval;
+
+	assert(argc_valid >= 1);
+	assert(argc >= argc_valid);
+
+	command = alloc_concatenate_strings(argc_valid, argv);
+	if (!command)
+		return JIM_ERR;
+
+	retval = command_run_linef(cmd_ctx, "usage %s", command);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("unable to execute command \"usage %s\"", command);
+		return JIM_ERR;
+	}
+
+	if (argc_valid == argc)
+		LOG_ERROR("%s: command requires more arguments", command);
+	else {
+		free(command);
+		command = alloc_concatenate_strings(argc - argc_valid, argv + argc_valid);
+		if (!command)
+			return JIM_ERR;
+		LOG_ERROR("invalid subcommand \"%s\"", command);
+	}
+
+	free(command);
+	return retval;
 }
 
 static int command_unknown(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
-	const char *cmd_name = Jim_GetString(argv[0], NULL);
-	if (strcmp(cmd_name, "unknown") == 0) {
-		if (argc == 1)
-			return JIM_OK;
-		argc--;
-		argv++;
-	}
-	script_debug(interp, cmd_name, argc, argv);
+	script_debug(interp, argc, argv);
 
 	struct command_context *cmd_ctx = current_command_context(interp);
 	struct command *c = cmd_ctx->commands;
-	int remaining = command_unknown_find(argc, argv, c, &c, true);
+	int remaining = command_unknown_find(argc, argv, c, &c);
 	/* if nothing could be consumed, then it's really an unknown command */
 	if (remaining == argc) {
 		const char *cmd = Jim_GetString(argv[0], NULL);
@@ -1007,7 +1042,6 @@ static int command_unknown(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 		return JIM_OK;
 	}
 
-	bool found = true;
 	Jim_Obj *const *start;
 	unsigned count;
 	if (c->handler || c->jim_handler) {
@@ -1015,22 +1049,21 @@ static int command_unknown(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 		count = remaining + 1;
 		start = argv + (argc - remaining - 1);
 	} else {
-		c = command_find(cmd_ctx->commands, "usage");
-		if (NULL == c) {
-			LOG_ERROR("unknown command, but usage is missing too");
-			return JIM_ERR;
-		}
 		count = argc - remaining;
 		start = argv;
-		found = false;
+		run_usage(interp, count, argc, start);
+		return JIM_ERR;
 	}
 	/* pass the command through to the intended handler */
 	if (c->jim_handler) {
+		if (!command_can_run(cmd_ctx, c))
+			return JIM_ERR;
+
 		interp->cmdPrivData = c->jim_handler_data;
 		return (*c->jim_handler)(interp, count, start);
 	}
 
-	return script_command_run(interp, count, start, c, found);
+	return script_command_run(interp, count, start, c);
 }
 
 static int jim_command_mode(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
@@ -1040,7 +1073,7 @@ static int jim_command_mode(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 
 	if (argc > 1) {
 		struct command *c = cmd_ctx->commands;
-		int remaining = command_unknown_find(argc - 1, argv + 1, c, &c, true);
+		int remaining = command_unknown_find(argc - 1, argv + 1, c, &c);
 		/* if nothing could be consumed, then it's an unknown command */
 		if (remaining == argc - 1) {
 			Jim_SetResultString(interp, "unknown", -1);
@@ -1069,32 +1102,6 @@ static int jim_command_mode(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 	return JIM_OK;
 }
 
-static int jim_command_type(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
-{
-	if (1 == argc)
-		return JIM_ERR;
-
-	struct command_context *cmd_ctx = current_command_context(interp);
-	struct command *c = cmd_ctx->commands;
-	int remaining = command_unknown_find(argc - 1, argv + 1, c, &c, true);
-	/* if nothing could be consumed, then it's an unknown command */
-	if (remaining == argc - 1) {
-		Jim_SetResultString(interp, "unknown", -1);
-		return JIM_OK;
-	}
-
-	if (c->jim_handler)
-		Jim_SetResultString(interp, "native", -1);
-	else if (c->handler)
-		Jim_SetResultString(interp, "simple", -1);
-	else if (remaining == 0)
-		Jim_SetResultString(interp, "group", -1);
-	else
-		Jim_SetResultString(interp, "unknown", -1);
-
-	return JIM_OK;
-}
-
 int help_add_command(struct command_context *cmd_ctx, struct command *parent,
 	const char *cmd_name, const char *help_text, const char *usage)
 {
@@ -1106,7 +1113,7 @@ int help_add_command(struct command_context *cmd_ctx, struct command *parent,
 			.name = cmd_name,
 			.mode = COMMAND_ANY,
 			.help = help_text,
-			.usage = usage,
+			.usage = usage ? : "",
 		};
 		nc = register_command(cmd_ctx, parent, &cr);
 		if (NULL == nc) {
@@ -1131,8 +1138,9 @@ int help_add_command(struct command_context *cmd_ctx, struct command *parent,
 	if (usage) {
 		bool replaced = false;
 		if (nc->usage) {
+			if (*nc->usage)
+				replaced = true;
 			free(nc->usage);
-			replaced = true;
 		}
 		nc->usage = strdup(usage);
 		if (replaced)
@@ -1208,25 +1216,31 @@ static const struct command_registration command_subcommand_handlers[] = {
 		.mode = COMMAND_ANY,
 		.jim_handler = jim_command_mode,
 		.usage = "[command_name ...]",
-		.help = "Returns the command modes allowed by a  command:"
-			"'any', 'config', or 'exec'.  If no command is"
-			"specified, returns the current command mode.  "
+		.help = "Returns the command modes allowed by a command: "
+			"'any', 'config', or 'exec'. If no command is "
+			"specified, returns the current command mode. "
 			"Returns 'unknown' if an unknown command is given. "
-			"Command can be multiple tokens.",
-	},
-	{
-		.name = "type",
-		.mode = COMMAND_ANY,
-		.jim_handler = jim_command_type,
-		.usage = "command_name [...]",
-		.help = "Returns the type of built-in command:"
-			"'native', 'simple', 'group', or 'unknown'. "
 			"Command can be multiple tokens.",
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
 static const struct command_registration command_builtin_handlers[] = {
+	{
+		.name = "ocd_find",
+		.mode = COMMAND_ANY,
+		.jim_handler = jim_find,
+		.help = "find full path to file",
+		.usage = "file",
+	},
+	{
+		.name = "capture",
+		.mode = COMMAND_ANY,
+		.jim_handler = jim_capture,
+		.help = "Capture progress output and return as tcl return value. If the "
+				"progress output was empty, return tcl return value.",
+		.usage = "command",
+	},
 	{
 		.name = "echo",
 		.handler = jim_echo,
@@ -1281,6 +1295,7 @@ static const struct command_registration command_builtin_handlers[] = {
 		.mode = COMMAND_ANY,
 		.help = "core command group (introspection)",
 		.chain = command_subcommand_handlers,
+		.usage = "",
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -1336,9 +1351,6 @@ struct command_context *command_init(const char *startup_tcl, Jim_Interp *interp
 	Jim_SetGlobalVariableStr(interp, "ocd_HOSTOS",
 		Jim_NewStringObj(interp, HostOs, strlen(HostOs)));
 
-	Jim_CreateCommand(interp, "ocd_find", jim_find, NULL, NULL);
-	Jim_CreateCommand(interp, "capture", jim_capture, NULL, NULL);
-
 	register_commands(context, NULL, command_builtin_handlers);
 
 	Jim_SetAssocData(interp, "context", NULL, context);
@@ -1390,6 +1402,7 @@ void process_jim_events(struct command_context *cmd_ctx)
 			return ERROR_COMMAND_ARGUMENT_INVALID; \
 		} \
 		char *end; \
+		errno = 0; \
 		*ul = func(str, &end, 0); \
 		if (*end) { \
 			LOG_ERROR("Invalid command argument"); \

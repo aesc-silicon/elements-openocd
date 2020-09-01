@@ -136,7 +136,7 @@ NAND_DEVICE_COMMAND_HANDLER(mxc_nand_device_command)
 		(nand->target->endianness == TARGET_LITTLE_ENDIAN);
 
 	/*
-	 * should factory bad block indicator be swaped
+	 * should factory bad block indicator be swapped
 	 * as a workaround for how the nfc handles pages.
 	 */
 	if (CMD_ARGC > 4 && strcmp(CMD_ARGV[4], "biswap") == 0) {
@@ -157,7 +157,7 @@ COMMAND_HANDLER(handle_mxc_biswap_command)
 
 	int retval = CALL_COMMAND_HANDLER(nand_command_get_device, 0, &nand);
 	if (retval != ERROR_OK) {
-		command_print(CMD_CTX, "invalid nand device number or name: %s", CMD_ARGV[0]);
+		command_print(CMD, "invalid nand device number or name: %s", CMD_ARGV[0]);
 		return ERROR_COMMAND_ARGUMENT_INVALID;
 	}
 
@@ -169,9 +169,9 @@ COMMAND_HANDLER(handle_mxc_biswap_command)
 			mxc_nf_info->flags.biswap_enabled = false;
 	}
 	if (mxc_nf_info->flags.biswap_enabled)
-		command_print(CMD_CTX, "BI-swapping enabled on %s", nand->name);
+		command_print(CMD, "BI-swapping enabled on %s", nand->name);
 	else
-		command_print(CMD_CTX, "BI-swapping disabled on %s", nand->name);
+		command_print(CMD, "BI-swapping disabled on %s", nand->name);
 
 	return ERROR_OK;
 }
@@ -179,8 +179,9 @@ COMMAND_HANDLER(handle_mxc_biswap_command)
 static const struct command_registration mxc_sub_command_handlers[] = {
 	{
 		.name = "biswap",
+		.mode = COMMAND_EXEC,
 		.handler = handle_mxc_biswap_command,
-		.help = "Turns on/off bad block information swaping from main area, "
+		.help = "Turns on/off bad block information swapping from main area, "
 			"without parameter query status.",
 		.usage = "bank_id ['enable'|'disable']",
 	},
@@ -192,7 +193,8 @@ static const struct command_registration mxc_nand_command_handler[] = {
 		.name = "mxc",
 		.mode = COMMAND_ANY,
 		.help = "MXC NAND flash controller commands",
-		.chain = mxc_sub_command_handlers
+		.chain = mxc_sub_command_handlers,
+		.usage = "",
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -398,7 +400,7 @@ static int mxc_command(struct nand_device *nand, uint8_t command)
 			mxc_nf_info->optype = MXC_NF_DATAOUT_PAGE;
 			break;
 		default:
-			/* Ohter command use the default 'One page data out' FDO */
+			/* Other command use the default 'One page data out' FDO */
 			mxc_nf_info->optype = MXC_NF_DATAOUT_PAGE;
 			break;
 	}
@@ -500,10 +502,10 @@ static int mxc_write_page(struct nand_device *nand, uint32_t page,
 	if (oob) {
 		if (mxc_nf_info->flags.hw_ecc_enabled) {
 			/*
-			 * part of spare block will be overrided by hardware
+			 * part of spare block will be overridden by hardware
 			 * ECC generator
 			 */
-			LOG_DEBUG("part of spare block will be overrided "
+			LOG_DEBUG("part of spare block will be overridden "
 				"by hardware ECC generator");
 		}
 		if (nfc_is_v1())
@@ -708,7 +710,7 @@ static int initialize_nf_controller(struct nand_device *nand)
 	uint16_t work_mode = 0;
 	uint16_t temp;
 	/*
-	 * resets NAND flash controller in zero time ? I dont know.
+	 * resets NAND flash controller in zero time ? I don't know.
 	 */
 	target_write_u16(target, MXC_NF_CFG1, MXC_NF_BIT_RESET_EN);
 	if (mxc_nf_info->mxc_version == MXC_VERSION_MX27)
@@ -872,7 +874,6 @@ int ecc_status_v1(struct nand_device *nand)
 		case 2 << 2:
 			LOG_INFO("main area read with more than 1 (incorrectable) error");
 			return ERROR_NAND_OPERATION_FAILED;
-			break;
 	}
 	switch (ecc_status & 0x0003) {
 		case 1:
@@ -881,7 +882,6 @@ int ecc_status_v1(struct nand_device *nand)
 		case 2:
 			LOG_INFO("main area read with more than 1 (incorrectable) error");
 			return ERROR_NAND_OPERATION_FAILED;
-			break;
 	}
 	return ERROR_OK;
 }

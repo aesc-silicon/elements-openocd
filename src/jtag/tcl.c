@@ -108,7 +108,7 @@ static int Jim_Command_drscan(Jim_Interp *interp, int argc, Jim_Obj *const *args
 
 	endstate = TAP_IDLE;
 
-	script_debug(interp, "drscan", argc, args);
+	script_debug(interp, argc, args);
 
 	/* validate arguments as numbers */
 	e = JIM_OK;
@@ -229,7 +229,7 @@ static int Jim_Command_pathmove(Jim_Interp *interp, int argc, Jim_Obj *const *ar
 		return JIM_ERR;
 	}
 
-	script_debug(interp, "pathmove", argc, args);
+	script_debug(interp, argc, args);
 
 	int i;
 	for (i = 0; i < argc-1; i++) {
@@ -261,7 +261,7 @@ static int Jim_Command_pathmove(Jim_Interp *interp, int argc, Jim_Obj *const *ar
 
 static int Jim_Command_flush_count(Jim_Interp *interp, int argc, Jim_Obj *const *args)
 {
-	script_debug(interp, "flush_count", argc, args);
+	script_debug(interp, argc, args);
 
 	Jim_SetResult(interp, Jim_NewIntObj(interp, jtag_get_flush_queue_count()));
 
@@ -307,11 +307,13 @@ static const struct command_registration jtag_command_handlers_to_move[] = {
 
 
 enum jtag_tap_cfg_param {
-	JCFG_EVENT
+	JCFG_EVENT,
+	JCFG_IDCODE,
 };
 
 static Jim_Nvp nvp_config_opts[] = {
 	{ .name = "-event",      .value = JCFG_EVENT },
+	{ .name = "-idcode",     .value = JCFG_IDCODE },
 
 	{ .name = NULL,          .value = -1 }
 };
@@ -404,8 +406,23 @@ static int jtag_tap_configure_cmd(Jim_GetOptInfo *goi, struct jtag_tap *tap)
 				if (e != JIM_OK)
 					return e;
 				break;
+			case JCFG_IDCODE:
+				if (goi->isconfigure) {
+					Jim_SetResultFormatted(goi->interp,
+							"not settable: %s", n->name);
+					return JIM_ERR;
+				} else {
+					if (goi->argc != 0) {
+						Jim_WrongNumArgs(goi->interp,
+								goi->argc, goi->argv,
+								"NO PARAMS");
+						return JIM_ERR;
+					}
+				}
+				Jim_SetResult(goi->interp, Jim_NewIntObj(goi->interp, tap->idcode));
+				break;
 			default:
-				Jim_SetResultFormatted(goi->interp, "unknown event: %s", n->name);
+				Jim_SetResultFormatted(goi->interp, "unknown value: %s", n->name);
 				return JIM_ERR;
 		}
 	}
@@ -622,6 +639,7 @@ static int jim_newtap_cmd(Jim_GetOptInfo *goi)
 static void jtag_tap_handle_event(struct jtag_tap *tap, enum jtag_event e)
 {
 	struct jtag_tap_event_action *jteap;
+	int retval;
 
 	for (jteap = tap->event_action; jteap != NULL; jteap = jteap->next) {
 		if (jteap->event != e)
@@ -632,7 +650,11 @@ static void jtag_tap_handle_event(struct jtag_tap *tap, enum jtag_event e)
 			tap->dotted_name, e, nvp->name,
 			Jim_GetString(jteap->body, NULL));
 
-		if (Jim_EvalObj(jteap->interp, jteap->body) != JIM_OK) {
+		retval = Jim_EvalObj(jteap->interp, jteap->body);
+		if (retval == JIM_RETURN)
+			retval = jteap->interp->returnCode;
+
+		if (retval != JIM_OK) {
 			Jim_MakeErrorMessage(jteap->interp);
 			LOG_USER("%s", Jim_GetString(Jim_GetResult(jteap->interp), NULL));
 			continue;
@@ -667,8 +689,9 @@ static int jim_jtag_arp_init(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 	int e = jtag_init_inner(context);
 	if (e != ERROR_OK) {
 		Jim_Obj *eObj = Jim_NewIntObj(goi.interp, e);
+		Jim_IncrRefCount(eObj);
 		Jim_SetResultFormatted(goi.interp, "error: %#s", eObj);
-		Jim_FreeNewObj(goi.interp, eObj);
+		Jim_DecrRefCount(goi.interp, eObj);
 		return JIM_ERR;
 	}
 	return JIM_OK;
@@ -691,8 +714,9 @@ static int jim_jtag_arp_init_reset(Jim_Interp *interp, int argc, Jim_Obj *const 
 
 	if (e != ERROR_OK) {
 		Jim_Obj *eObj = Jim_NewIntObj(goi.interp, e);
+		Jim_IncrRefCount(eObj);
 		Jim_SetResultFormatted(goi.interp, "error: %#s", eObj);
-		Jim_FreeNewObj(goi.interp, eObj);
+		Jim_DecrRefCount(goi.interp, eObj);
 		return JIM_ERR;
 	}
 	return JIM_OK;
@@ -894,7 +918,7 @@ static const struct command_registration jtag_subcommand_handlers[] = {
 	},
 	{
 		.name = "configure",
-		.mode = COMMAND_EXEC,
+		.mode = COMMAND_ANY,
 		.jim_handler = jim_jtag_configure,
 		.help = "Provide a Tcl handler for the specified "
 			"TAP event.",
@@ -935,15 +959,15 @@ COMMAND_HANDLER(handle_scan_chain_command)
 	char expected_id[12];
 
 	tap = jtag_all_taps();
-	command_print(CMD_CTX,
+	command_print(CMD,
 		"   TapName             Enabled  IdCode     Expected   IrLen IrCap IrMask");
-	command_print(CMD_CTX,
+	command_print(CMD,
 		"-- ------------------- -------- ---------- ---------- ----- ----- ------");
 
 	while (tap) {
 		uint32_t expected, expected_mask, ii;
 
-		snprintf(expected_id, sizeof expected_id, "0x%08x",
+		snprintf(expected_id, sizeof(expected_id), "0x%08x",
 			(unsigned)((tap->expected_ids_cnt > 0)
 				   ? tap->expected_ids[0]
 				   : 0));
@@ -953,7 +977,7 @@ COMMAND_HANDLER(handle_scan_chain_command)
 		expected = buf_get_u32(tap->expected, 0, tap->ir_length);
 		expected_mask = buf_get_u32(tap->expected_mask, 0, tap->ir_length);
 
-		command_print(CMD_CTX,
+		command_print(CMD,
 			"%2d %-18s     %c     0x%08x %s %5d 0x%02x  0x%02x",
 			tap->abs_chain_position,
 			tap->dotted_name,
@@ -965,12 +989,12 @@ COMMAND_HANDLER(handle_scan_chain_command)
 			(unsigned int)(expected_mask));
 
 		for (ii = 1; ii < tap->expected_ids_cnt; ii++) {
-			snprintf(expected_id, sizeof expected_id, "0x%08x",
+			snprintf(expected_id, sizeof(expected_id), "0x%08x",
 				(unsigned) tap->expected_ids[ii]);
 			if (tap->ignore_version)
 				expected_id[2] = '*';
 
-			command_print(CMD_CTX,
+			command_print(CMD,
 				"                                           %s",
 				expected_id);
 		}
@@ -991,7 +1015,7 @@ COMMAND_HANDLER(handle_jtag_ntrst_delay_command)
 
 		jtag_set_ntrst_delay(delay);
 	}
-	command_print(CMD_CTX, "jtag_ntrst_delay: %u", jtag_get_ntrst_delay());
+	command_print(CMD, "jtag_ntrst_delay: %u", jtag_get_ntrst_delay());
 	return ERROR_OK;
 }
 
@@ -1005,7 +1029,7 @@ COMMAND_HANDLER(handle_jtag_ntrst_assert_width_command)
 
 		jtag_set_ntrst_assert_width(delay);
 	}
-	command_print(CMD_CTX, "jtag_ntrst_assert_width: %u", jtag_get_ntrst_assert_width());
+	command_print(CMD, "jtag_ntrst_assert_width: %u", jtag_get_ntrst_assert_width());
 	return ERROR_OK;
 }
 
@@ -1030,39 +1054,11 @@ COMMAND_HANDLER(handle_jtag_rclk_command)
 		return retval;
 
 	if (cur_khz)
-		command_print(CMD_CTX, "RCLK not supported - fallback to %d kHz", cur_khz);
+		command_print(CMD, "RCLK not supported - fallback to %d kHz", cur_khz);
 	else
-		command_print(CMD_CTX, "RCLK - adaptive");
+		command_print(CMD, "RCLK - adaptive");
 
 	return retval;
-}
-
-COMMAND_HANDLER(handle_jtag_reset_command)
-{
-	if (CMD_ARGC != 2)
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	int trst = -1;
-	if (CMD_ARGV[0][0] == '1')
-		trst = 1;
-	else if (CMD_ARGV[0][0] == '0')
-		trst = 0;
-	else
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	int srst = -1;
-	if (CMD_ARGV[1][0] == '1')
-		srst = 1;
-	else if (CMD_ARGV[1][0] == '0')
-		srst = 0;
-	else
-		return ERROR_COMMAND_SYNTAX_ERROR;
-
-	if (adapter_init(CMD_CTX) != ERROR_OK)
-		return ERROR_JTAG_INIT_FAILED;
-
-	jtag_add_reset(trst, srst);
-	return jtag_execute_queue();
 }
 
 COMMAND_HANDLER(handle_runtest_command)
@@ -1131,18 +1127,23 @@ COMMAND_HANDLER(handle_irscan_command)
 		tap = jtag_tap_by_string(CMD_ARGV[i*2]);
 		if (tap == NULL) {
 			free(fields);
-			command_print(CMD_CTX, "Tap: %s unknown", CMD_ARGV[i*2]);
+			command_print(CMD, "Tap: %s unknown", CMD_ARGV[i*2]);
 
 			return ERROR_FAIL;
 		}
-		int field_size = tap->ir_length;
-		fields[i].num_bits = field_size;
-		uint8_t *v = malloc(DIV_ROUND_UP(field_size, 8));
-
 		uint64_t value;
 		retval = parse_u64(CMD_ARGV[i * 2 + 1], &value);
 		if (ERROR_OK != retval)
 			goto error_return;
+
+		int field_size = tap->ir_length;
+		fields[i].num_bits = field_size;
+		uint8_t *v = calloc(1, DIV_ROUND_UP(field_size, 8));
+		if (!v) {
+			LOG_ERROR("Out of memory");
+			goto error_return;
+		}
+
 		buf_set_u64(v, 0, field_size, value);
 		fields[i].out_value = v;
 		fields[i].in_value = NULL;
@@ -1176,7 +1177,7 @@ COMMAND_HANDLER(handle_verify_ircapture_command)
 	}
 
 	const char *status = jtag_will_verify_capture_ir() ? "enabled" : "disabled";
-	command_print(CMD_CTX, "verify Capture-IR is %s", status);
+	command_print(CMD, "verify Capture-IR is %s", status);
 
 	return ERROR_OK;
 }
@@ -1193,7 +1194,7 @@ COMMAND_HANDLER(handle_verify_jtag_command)
 	}
 
 	const char *status = jtag_will_verify() ? "enabled" : "disabled";
-	command_print(CMD_CTX, "verify jtag capture is %s", status);
+	command_print(CMD, "verify jtag capture is %s", status);
 
 	return ERROR_OK;
 }
@@ -1215,7 +1216,7 @@ COMMAND_HANDLER(handle_tms_sequence_command)
 		tap_use_new_tms_table(use_new_table);
 	}
 
-	command_print(CMD_CTX, "tms sequence is  %s",
+	command_print(CMD, "tms sequence is  %s",
 		tap_uses_new_tms_table() ? "short" : "long");
 
 	return ERROR_OK;
@@ -1310,14 +1311,6 @@ static const struct command_registration jtag_command_handlers[] = {
 		.usage = ""
 	},
 	{
-		.name = "jtag_reset",
-		.handler = handle_jtag_reset_command,
-		.mode = COMMAND_EXEC,
-		.help = "Set reset line values.  Value '1' is active, "
-			"value '0' is inactive.",
-		.usage = "trst_active srst_active",
-	},
-	{
 		.name = "runtest",
 		.handler = handle_runtest_command,
 		.mode = COMMAND_EXEC,
@@ -1328,7 +1321,7 @@ static const struct command_registration jtag_command_handlers[] = {
 		.name = "irscan",
 		.handler = handle_irscan_command,
 		.mode = COMMAND_EXEC,
-		.help = "Execute Instruction Register (DR) scan.  The "
+		.help = "Execute Instruction Register (IR) scan.  The "
 			"specified opcodes are put into each TAP's IR, "
 			"and other TAPs are put in BYPASS.",
 		.usage = "[tap_name instruction]* ['-endstate' state_name]",

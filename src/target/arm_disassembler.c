@@ -92,8 +92,8 @@
  * the Cortex-M implementations).
  */
 
-/* textual represenation of the condition field
- * ALways (default) is ommitted (empty string) */
+/* textual representation of the condition field
+ * ALways (default) is omitted (empty string) */
 static const char *arm_condition_strings[] = {
 	"EQ", "NE", "CS", "CC", "MI", "PL", "VS", "VC", "HI", "LS", "GE", "LT", "GT", "LE", "", "NV"
 };
@@ -2086,7 +2086,7 @@ static int evaluate_b_bl_blx_thumb(uint16_t opcode,
 			break;
 		/* BL/BLX prefix */
 		case 2:
-			instruction->type = ARM_UNKNOWN_INSTUCTION;
+			instruction->type = ARM_UNKNOWN_INSTRUCTION;
 			mnemonic = "prefix";
 			target_address = offset << 12;
 			break;
@@ -2309,7 +2309,6 @@ static int evaluate_data_proc_thumb(uint16_t opcode,
 							address, opcode);
 				}
 				return ERROR_OK;
-				break;
 		}
 	} else {
 		switch (op) {
@@ -2673,7 +2672,7 @@ static int evaluate_load_store_multiple_thumb(uint16_t opcode,
 			instruction->type = ARM_STM;
 			mnemonic = "STM";
 		}
-		snprintf(ptr_name, sizeof ptr_name, "r%i%s, ", Rn, wback);
+		snprintf(ptr_name, sizeof(ptr_name), "r%i%s, ", Rn, wback);
 	} else {/* push/pop */
 		Rn = 13;/* SP */
 		if (L) {
@@ -2897,7 +2896,7 @@ int thumb_evaluate_opcode(uint16_t opcode, uint32_t address, struct arm_instruct
 	instruction->instruction_size = 2;
 
 	if ((opcode & 0xe000) == 0x0000) {
-		/* add/substract register or immediate */
+		/* add/subtract register or immediate */
 		if ((opcode & 0x1800) == 0x1800)
 			return evaluate_add_sub_thumb(opcode, address, instruction);
 		/* shift by immediate */
@@ -2905,7 +2904,7 @@ int thumb_evaluate_opcode(uint16_t opcode, uint32_t address, struct arm_instruct
 			return evaluate_shift_imm_thumb(opcode, address, instruction);
 	}
 
-	/* Add/substract/compare/move immediate */
+	/* Add/subtract/compare/move immediate */
 	if ((opcode & 0xe000) == 0x2000)
 		return evaluate_data_proc_imm_thumb(opcode, address, instruction);
 

@@ -280,7 +280,7 @@ static int xmc4xxx_load_bank_layout(struct flash_bank *bank)
 
 	/* At this point, we know which flash controller ID we're
 	 * talking to and simply need to fill out the bank structure accordingly */
-	LOG_DEBUG("%d sectors", bank->num_sectors);
+	LOG_DEBUG("%u sectors", bank->num_sectors);
 
 	switch (bank->num_sectors) {
 	case 8:
@@ -296,7 +296,7 @@ static int xmc4xxx_load_bank_layout(struct flash_bank *bank)
 		capacity = sector_capacity_16;
 		break;
 	default:
-		LOG_ERROR("Unexpected number of sectors, %d\n",
+		LOG_ERROR("Unexpected number of sectors, %u\n",
 			  bank->num_sectors);
 		return ERROR_FAIL;
 	}
@@ -307,7 +307,7 @@ static int xmc4xxx_load_bank_layout(struct flash_bank *bank)
 	uint32_t total_offset = 0;
 	bank->sectors = calloc(bank->num_sectors,
 			       sizeof(struct flash_sector));
-	for (int i = 0; i < bank->num_sectors; i++) {
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		bank->sectors[i].size = capacity[i] * 1024;
 		bank->sectors[i].offset = total_offset;
 		bank->sectors[i].is_erased = -1;
@@ -408,7 +408,7 @@ static int xmc4xxx_probe(struct flash_bank *bank)
 }
 
 static int xmc4xxx_get_sector_start_addr(struct flash_bank *bank,
-					 int sector, uint32_t *ret_addr)
+		unsigned int sector, uint32_t *ret_addr)
 {
 	/* Make sure we understand this sector */
 	if (sector > bank->num_sectors)
@@ -538,7 +538,8 @@ static int xmc4xxx_erase_sector(struct flash_bank *bank, uint32_t address,
 	return res;
 }
 
-static int xmc4xxx_erase(struct flash_bank *bank, int first, int last)
+static int xmc4xxx_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	struct xmc4xxx_flash_bank *fb = bank->driver_priv;
 	int res;
@@ -556,14 +557,14 @@ static int xmc4xxx_erase(struct flash_bank *bank, int first, int last)
 
 	uint32_t tmp_addr;
 	/* Loop through the sectors and erase each one */
-	for (int i = first; i <= last; i++) {
+	for (unsigned int i = first; i <= last; i++) {
 		res = xmc4xxx_get_sector_start_addr(bank, i, &tmp_addr);
 		if (res != ERROR_OK) {
-			LOG_ERROR("Invalid sector %d", i);
+			LOG_ERROR("Invalid sector %u", i);
 			return res;
 		}
 
-		LOG_DEBUG("Erasing sector %d @ 0x%08"PRIx32, i, tmp_addr);
+		LOG_DEBUG("Erasing sector %u @ 0x%08"PRIx32, i, tmp_addr);
 
 		res = xmc4xxx_erase_sector(bank, tmp_addr, false);
 		if (res != ERROR_OK) {
@@ -778,7 +779,7 @@ static int xmc4xxx_write(struct flash_bank *bank, const uint8_t *buffer,
 		memcpy(&tmp_buf[start_pad], buffer, remaining);
 
 		if (end_pad) {
-			LOG_INFO("Padding end of page @%08"PRIx32" by %d bytes",
+			LOG_INFO("Padding end of page @" TARGET_ADDR_FMT " by %d bytes",
 				 bank->base + offset, end_pad);
 			memset(&tmp_buf[256 - end_pad], 0xff, end_pad);
 		}
@@ -925,7 +926,7 @@ static int xmc4xxx_get_info_command(struct flash_bank *bank, char *buf, int buf_
 		snprintf(prot_str, sizeof(prot_str), "\nFlash is read protected");
 
 	bool otp_enabled = false;
-	for (int i = 0; i < bank->num_sectors; i++)
+	for (unsigned int i = 0; i < bank->num_sectors; i++)
 		if (fb->write_prot_otp[i])
 			otp_enabled = true;
 
@@ -934,7 +935,7 @@ static int xmc4xxx_get_info_command(struct flash_bank *bank, char *buf, int buf_
 	char otp_str[14];
 	if (otp_enabled) {
 		strcat(prot_str, "\nOTP Protection is enabled for sectors:\n");
-		for (int i = 0; i < bank->num_sectors; i++) {
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
 			if (fb->write_prot_otp[i]) {
 				snprintf(otp_str, sizeof(otp_str), "- %d\n", i);
 				strncat(prot_str, otp_str, sizeof(prot_str) - strlen(prot_str) - 1);
@@ -1028,7 +1029,7 @@ static int xmc4xxx_flash_unprotect(struct flash_bank *bank, int32_t level)
 
 /* Reference: "XMC4500 Flash Protection.pptx" app note */
 static int xmc4xxx_flash_protect(struct flash_bank *bank, int level, bool read_protect,
-				 int first, int last)
+		unsigned int first, unsigned int last)
 {
 	/* User configuration block buffers */
 	uint8_t ucp0_buf[8 * sizeof(uint32_t)] = {0};
@@ -1087,7 +1088,7 @@ static int xmc4xxx_flash_protect(struct flash_bank *bank, int level, bool read_p
 
 	/*  We need to fill out the procon register representation
 	 *   that we will be writing to the device */
-	for (int i = first; i <= last; i++)
+	for (unsigned int i = first; i <= last; i++)
 		procon |= 1 << i;
 
 	/* If read protection is requested, set the appropriate bit
@@ -1144,7 +1145,8 @@ static int xmc4xxx_flash_protect(struct flash_bank *bank, int level, bool read_p
 	return ERROR_OK;
 }
 
-static int xmc4xxx_protect(struct flash_bank *bank, int set, int first, int last)
+static int xmc4xxx_protect(struct flash_bank *bank, int set, unsigned int first,
+		unsigned int last)
 {
 	int ret;
 	struct xmc4xxx_flash_bank *fb = bank->driver_priv;
@@ -1193,15 +1195,15 @@ static int xmc4xxx_protect_check(struct flash_bank *bank)
 		return ret;
 	}
 
-	int sectors = bank->num_sectors;
+	unsigned int sectors = bank->num_sectors;
 
-	/* On devices with 12 sectors, sectors 10 & 11 are ptected
+	/* On devices with 12 sectors, sectors 10 & 11 are protected
 	 * together instead of individually */
 	if (sectors == 12)
 		sectors--;
 
 	/* Clear the protection status */
-	for (int i = 0; i < bank->num_sectors; i++) {
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		bank->sectors[i].is_protected = 0;
 		fb->write_prot_otp[i] = false;
 	}
@@ -1214,7 +1216,7 @@ static int xmc4xxx_protect_check(struct flash_bank *bank)
 
 		/* Check for write protection on every available
 		*  sector */
-		for (int j = 0; j < sectors; j++) {
+		for (unsigned int j = 0; j < sectors; j++) {
 			int set = (protection[i] & (1 << j)) ? 1 : 0;
 			bank->sectors[j].is_protected |= set;
 
@@ -1235,7 +1237,7 @@ static int xmc4xxx_protect_check(struct flash_bank *bank)
 		}
 	}
 
-	/* XMC4xxx also supports read proptection, make a note
+	/* XMC4xxx also supports read protection, make a note
 	 * in the private driver structure */
 	if (protection[0] & PROCON_RPRO_MASK)
 		fb->read_protected = true;
@@ -1284,9 +1286,9 @@ COMMAND_HANDLER(xmc4xxx_handle_flash_password_command)
 
 	fb->pw_set = true;
 
-	command_print(CMD_CTX, "XMC4xxx flash passwords set to:\n");
-	command_print(CMD_CTX, "-0x%08"PRIx32"\n", fb->pw1);
-	command_print(CMD_CTX, "-0x%08"PRIx32"\n", fb->pw2);
+	command_print(CMD, "XMC4xxx flash passwords set to:\n");
+	command_print(CMD, "-0x%08"PRIx32"\n", fb->pw1);
+	command_print(CMD, "-0x%08"PRIx32"\n", fb->pw2);
 	return ERROR_OK;
 }
 
@@ -1329,7 +1331,8 @@ static const struct command_registration xmc4xxx_exec_command_handlers[] = {
 		.usage = "bank_id user_level[0-1]",
 		.help = "Permanently Removes flash protection (read and write) "
 		"for the specified user level",
-	},	COMMAND_REGISTRATION_DONE
+	},
+	COMMAND_REGISTRATION_DONE
 };
 
 static const struct command_registration xmc4xxx_command_handlers[] = {
@@ -1343,7 +1346,7 @@ static const struct command_registration xmc4xxx_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-struct flash_driver xmc4xxx_flash = {
+const struct flash_driver xmc4xxx_flash = {
 	.name = "xmc4xxx",
 	.commands = xmc4xxx_command_handlers,
 	.flash_bank_command = xmc4xxx_flash_bank_command,

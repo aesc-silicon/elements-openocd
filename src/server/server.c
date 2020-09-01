@@ -76,7 +76,7 @@ static int add_connection(struct service *service, struct command_context *cmd_c
 	memset(&c->sin, 0, sizeof(c->sin));
 	c->cmd_ctx = copy_command_context(cmd_ctx);
 	c->service = service;
-	c->input_pending = 0;
+	c->input_pending = false;
 	c->priv = NULL;
 	c->next = NULL;
 
@@ -325,7 +325,7 @@ int add_service(char *name,
 #endif
 	} else if (c->type == CONNECTION_PIPE) {
 #ifdef _WIN32
-		/* we currenty do not support named pipes under win32
+		/* we currently do not support named pipes under win32
 		 * so exit openocd for now */
 		LOG_ERROR("Named pipes currently not supported under this os");
 		free_service(c);
@@ -562,7 +562,7 @@ int server_loop(struct command_context *command_context)
 				struct connection *c;
 
 				for (c = service->connections; c; ) {
-					if ((FD_ISSET(c->fd, &read_fds)) || c->input_pending) {
+					if ((c->fd >= 0 && FD_ISSET(c->fd, &read_fds)) || c->input_pending) {
 						retval = service->input(c);
 						if (retval != ERROR_OK) {
 							struct connection *next = c->next;
@@ -631,7 +631,7 @@ static void sigkey_handler(int sig)
 #endif
 
 
-int server_preinit(void)
+int server_host_os_entry(void)
 {
 	/* this currently only calls WSAStartup on native win32 systems
 	 * before any socket operations are performed.
@@ -647,7 +647,21 @@ int server_preinit(void)
 		LOG_ERROR("Failed to Open Winsock");
 		return ERROR_FAIL;
 	}
+#endif
+	return ERROR_OK;
+}
 
+int server_host_os_close(void)
+{
+#ifdef _WIN32
+	WSACleanup();
+#endif
+	return ERROR_OK;
+}
+
+int server_preinit(void)
+{
+#ifdef _WIN32
 	/* register ctrl-c handler */
 	SetConsoleCtrlHandler(ControlHandler, TRUE);
 
@@ -688,7 +702,6 @@ int server_quit(void)
 	target_quit();
 
 #ifdef _WIN32
-	WSACleanup();
 	SetConsoleCtrlHandler(ControlHandler, FALSE);
 
 	return ERROR_OK;
@@ -703,6 +716,8 @@ void server_free(void)
 	tcl_service_free();
 	telnet_service_free();
 	jsp_service_free();
+
+	free(bindto_name);
 }
 
 void exit_on_signal(int sig)
@@ -767,7 +782,7 @@ COMMAND_HANDLER(handle_bindto_command)
 {
 	switch (CMD_ARGC) {
 		case 0:
-			command_print(CMD_CTX, "bindto name: %s", bindto_name);
+			command_print(CMD, "bindto name: %s", bindto_name);
 			break;
 		case 1:
 			free(bindto_name);
@@ -797,7 +812,7 @@ static const struct command_registration server_command_handlers[] = {
 	{
 		.name = "bindto",
 		.handler = &handle_bindto_command,
-		.mode = COMMAND_ANY,
+		.mode = COMMAND_CONFIG,
 		.usage = "[name]",
 		.help = "Specify address by name on which to listen for "
 			"incoming TCP/IP connections",
@@ -826,7 +841,7 @@ COMMAND_HELPER(server_port_command, unsigned short *out)
 {
 	switch (CMD_ARGC) {
 		case 0:
-			command_print(CMD_CTX, "%d", *out);
+			command_print(CMD, "%d", *out);
 			break;
 		case 1:
 		{
@@ -845,7 +860,7 @@ COMMAND_HELPER(server_pipe_command, char **out)
 {
 	switch (CMD_ARGC) {
 		case 0:
-			command_print(CMD_CTX, "%s", *out);
+			command_print(CMD, "%s", *out);
 			break;
 		case 1:
 		{

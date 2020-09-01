@@ -92,7 +92,7 @@
 #endif
 
 #define CONTROL_TIMEOUT		5000		/* 5s    */
-#define PAGE_SIZE			4096
+#define FLASH_PAGE_SIZE		4096
 #define PB_MAX				32
 
 #define NUM_NS_PER_S		1000000000ULL
@@ -252,7 +252,8 @@ static int esirisc_flash_recall(struct flash_bank *bank)
 	return esirisc_flash_control(bank, CONTROL_R);
 }
 
-static int esirisc_flash_erase(struct flash_bank *bank, int first, int last)
+static int esirisc_flash_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	struct esirisc_flash_bank *esirisc_info = bank->driver_priv;
 	struct target *target = bank->target;
@@ -263,8 +264,8 @@ static int esirisc_flash_erase(struct flash_bank *bank, int first, int last)
 
 	(void)esirisc_flash_disable_protect(bank);
 
-	for (int page = first; page < last; ++page) {
-		uint32_t address = page * PAGE_SIZE;
+	for (unsigned int page = first; page < last; ++page) {
+		uint32_t address = page * FLASH_PAGE_SIZE;
 
 		target_write_u32(target, esirisc_info->cfg + ADDRESS, address);
 
@@ -464,8 +465,8 @@ static int esirisc_flash_probe(struct flash_bank *bank)
 	if (target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
-	bank->num_sectors = bank->size / PAGE_SIZE;
-	bank->sectors = alloc_block_array(0, PAGE_SIZE, bank->num_sectors);
+	bank->num_sectors = bank->size / FLASH_PAGE_SIZE;
+	bank->sectors = alloc_block_array(0, FLASH_PAGE_SIZE, bank->num_sectors);
 
 	retval = esirisc_flash_init(bank);
 	if (retval != ERROR_OK) {
@@ -516,7 +517,7 @@ COMMAND_HANDLER(handle_esirisc_flash_mass_erase_command)
 
 	retval = esirisc_flash_mass_erase(bank);
 
-	command_print(CMD_CTX, "mass erase %s",
+	command_print(CMD, "mass erase %s",
 			(retval == ERROR_OK) ? "successful" : "failed");
 
 	return retval;
@@ -536,7 +537,7 @@ COMMAND_HANDLER(handle_esirisc_flash_ref_erase_command)
 
 	retval = esirisc_flash_ref_erase(bank);
 
-	command_print(CMD_CTX, "erase reference cell %s",
+	command_print(CMD, "erase reference cell %s",
 			(retval == ERROR_OK) ? "successful" : "failed");
 
 	return retval;
@@ -571,7 +572,7 @@ static const struct command_registration esirisc_flash_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-struct flash_driver esirisc_flash = {
+const struct flash_driver esirisc_flash = {
 	.name = "esirisc",
 	.usage = "flash bank bank_id 'esirisc' base_address size_bytes 0 0 target "
 			"cfg_address clock_hz wait_states",

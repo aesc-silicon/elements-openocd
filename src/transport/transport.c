@@ -122,9 +122,9 @@ int allow_transports(struct command_context *ctx, const char * const *vector)
 }
 
 /**
- * Used to verify corrrect adapter driver initialization.
+ * Used to verify correct adapter driver initialization.
  *
- * @returns true iff the adapter declared one or more transports.
+ * @returns true if the adapter declares one or more transports.
  */
 bool transports_are_declared(void)
 {
@@ -139,7 +139,7 @@ bool transports_are_declared(void)
  * Code implementing a transport needs to register it before it can
  * be selected and then activated.  This is a dynamic process, so
  * that chips (and families) can define transports as needed (without
- * nneeding error-prone static tables).
+ * needing error-prone static tables).
  *
  * @param new_transport the transport being registered.  On a
  * successful return, this memory is owned by the transport framework.
@@ -258,10 +258,10 @@ COMMAND_HANDLER(handle_transport_list)
 	if (CMD_ARGC != 0)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	command_print(CMD_CTX, "The following transports are available:");
+	command_print(CMD, "The following transports are available:");
 
 	for (struct transport *t = transport_list; t; t = t->next)
-		command_print(CMD_CTX, "\t%s", t->name);
+		command_print(CMD, "\t%s", t->name);
 
 	return ERROR_OK;
 }
@@ -290,7 +290,6 @@ static int jim_transport_select(Jim_Interp *interp, int argc, Jim_Obj * const *a
 			}
 			Jim_SetResultString(interp, session->name, -1);
 			return JIM_OK;
-			break;
 		case 2:	/* assign */
 			if (session) {
 				if (!strcmp(session->name, argv[1]->bytes)) {
@@ -327,7 +326,6 @@ static int jim_transport_select(Jim_Interp *interp, int argc, Jim_Obj * const *a
 
 			LOG_ERROR("Debug adapter doesn't support '%s' transport", argv[1]->bytes);
 			return JIM_ERR;
-			break;
 		default:
 			Jim_WrongNumArgs(interp, 1, argv, "[too many parameters]");
 			return JIM_ERR;

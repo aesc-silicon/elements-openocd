@@ -77,7 +77,7 @@ patch:
   src/openocd -s ../tcl -f /path/to/openocd.cfg
   @endcode
 
-Please consider performing these additonal checks where appropriate
+Please consider performing these additional checks where appropriate
 (especially Clang Static Analyzer for big portions of new code) and
 mention the results (e.g. "Valgrind-clean, no new Clang analyzer
 warnings") in the commit message.
@@ -122,18 +122,22 @@ to instruct git locally how to send off the changes.
   -# Add a new remote to git using Gerrit username:
 @code
 git remote add review ssh://USERNAME@openocd.zylin.com:29418/openocd.git
-git config remote.review.push HEAD:refs/publish/master
+git config remote.review.push HEAD:refs/for/master
 @endcode
   Or with http only:
 @code
 git remote add review http://USERNAME@openocd.zylin.com/p/openocd.git
-git config remote.review.push HEAD:refs/publish/master
+git config remote.review.push HEAD:refs/for/master
 @endcode
   The http password is configured from your gerrit settings - http://openocd.zylin.com/#/settings/http-password.
   \note If you want to simplify http access you can also add your http password to the url as follows:
 @code
 git remote add review http://USERNAME:PASSWORD@openocd.zylin.com/p/openocd.git
 @endcode
+  \note All contributions should be pushed to @c refs/for/master on the
+Gerrit server, even if you plan to use several local branches for different
+topics. It is possible because @c for/master is not a traditional Git
+branch.
   -# You will need to install this hook, we will look into a better solution:
 @code
 scp -p -P 29418 USERNAME@openocd.zylin.com:hooks/commit-msg .git/hooks/
@@ -144,7 +148,7 @@ wget http://openocd.zylin.com/tools/hooks/commit-msg
 mv commit-msg .git/hooks
 chmod +x .git/hooks/commit-msg
 @endcode
-  \note A script exists to simplify the two items above. execute:
+  \note A script exists to simplify the two items above. Execute:
 @code
 tools/initial.sh <username>
 @endcode
@@ -156,7 +160,7 @@ git config --global user.email "john@smith.org"
 @endcode
 -# Work on your patches. Split the work into
    multiple small patches that can be reviewed and
-   applied seperately and safely to the OpenOCD
+   applied separately and safely to the OpenOCD
    repository.
 @code
 while(!done) {
