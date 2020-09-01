@@ -98,14 +98,15 @@ static int fm4_enter_flash_cpu_rom_mode(struct target *target)
 	return ERROR_OK;
 }
 
-static int fm4_flash_erase(struct flash_bank *bank, int first, int last)
+static int fm4_flash_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	struct target *target = bank->target;
 	struct working_area *workarea;
 	struct reg_param reg_params[4];
 	struct armv7m_algorithm armv7m_algo;
 	unsigned i;
-	int retval, sector;
+	int retval;
 	const uint8_t erase_sector_code[] = {
 #include "../../../contrib/loaders/flash/fm4/erase.inc"
 	};
@@ -115,7 +116,7 @@ static int fm4_flash_erase(struct flash_bank *bank, int first, int last)
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	LOG_DEBUG("Spansion FM4 erase sectors %d to %d", first, last);
+	LOG_DEBUG("Spansion FM4 erase sectors %u to %u", first, last);
 
 	retval = fm4_disable_hw_watchdog(target);
 	if (retval != ERROR_OK)
@@ -145,7 +146,7 @@ static int fm4_flash_erase(struct flash_bank *bank, int first, int last)
 	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);
 	init_reg_param(&reg_params[3], "r3", 32, PARAM_IN);
 
-	for (sector = first; sector <= last; sector++) {
+	for (unsigned int sector = first; sector <= last; sector++) {
 		uint32_t addr = bank->base + bank->sectors[sector].offset;
 		uint32_t result;
 
@@ -207,7 +208,7 @@ static int fm4_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 	uint32_t halfword_count = DIV_ROUND_UP(byte_count, 2);
 	uint32_t result;
 	unsigned i;
-	int retval;
+	int retval, retval2 = ERROR_OK;
 	const uint8_t write_block_code[] = {
 #include "../../../contrib/loaders/flash/fm4/write.inc"
 	};
@@ -272,7 +273,7 @@ static int fm4_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 		uint32_t halfwords = MIN(halfword_count, data_workarea->size / 2);
 		uint32_t addr = bank->base + offset;
 
-		LOG_DEBUG("copying %" PRId32 " bytes to SRAM 0x%08" TARGET_PRIxADDR,
+		LOG_DEBUG("copying %" PRId32 " bytes to SRAM " TARGET_ADDR_FMT,
 			MIN(halfwords * 2, byte_count), data_workarea->address);
 
 		retval = target_write_buffer(target, data_workarea->address,
@@ -327,7 +328,7 @@ static int fm4_flash_write(struct flash_bank *bank, const uint8_t *buffer,
 err_run_ret:
 err_run:
 err_write_data:
-	retval = fm4_enter_flash_cpu_rom_mode(target);
+	retval2 = fm4_enter_flash_cpu_rom_mode(target);
 
 err_flash_mode:
 	for (i = 0; i < ARRAY_SIZE(reg_params); i++)
@@ -338,14 +339,15 @@ err_alloc_data:
 err_write_code:
 	target_free_working_area(target, code_workarea);
 
-	return retval;
+	if (retval != ERROR_OK)
+		return retval;
+	return retval2;
 }
 
 static int mb9bf_probe(struct flash_bank *bank)
 {
 	struct fm4_flash_bank *fm4_bank = bank->driver_priv;
 	uint32_t flash_addr = bank->base;
-	int i;
 
 	switch (fm4_bank->variant) {
 	case mb9bfx64:
@@ -367,10 +369,10 @@ static int mb9bf_probe(struct flash_bank *bank)
 		return ERROR_FLASH_OPER_UNSUPPORTED;
 	}
 
-	LOG_DEBUG("%d sectors", bank->num_sectors);
+	LOG_DEBUG("%u sectors", bank->num_sectors);
 	bank->sectors = calloc(bank->num_sectors,
 				sizeof(struct flash_sector));
-	for (i = 0; i < bank->num_sectors; i++) {
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		if (i < 4)
 			bank->sectors[i].size = 8 * 1024;
 		else if (i == 4)
@@ -407,7 +409,8 @@ static int s6e2cc_probe(struct flash_bank *bank)
 	struct fm4_flash_bank *fm4_bank = bank->driver_priv;
 	uint32_t u32_value;
 	uint32_t flash_addr = bank->base;
-	int i, retval, num_sectors, num_extra_sectors;
+	int retval;
+	unsigned int i, num_extra_sectors, num_sectors;
 
 	retval = target_read_u32(target, DFCTRLR, &u32_value);
 	if (retval != ERROR_OK)
@@ -433,7 +436,7 @@ static int s6e2cc_probe(struct flash_bank *bank)
 	num_extra_sectors = (fm4_bank->macro_nr == 0) ? 1 : 4;
 	bank->num_sectors = num_sectors + num_extra_sectors;
 
-	LOG_DEBUG("%d sectors", bank->num_sectors);
+	LOG_DEBUG("%u sectors", bank->num_sectors);
 	bank->sectors = calloc(bank->num_sectors,
 				sizeof(struct flash_sector));
 	for (i = 0; i < num_sectors; i++) {
@@ -464,12 +467,11 @@ static int s6e2cc_probe(struct flash_bank *bank)
 static int s6e2dh_probe(struct flash_bank *bank)
 {
 	uint32_t flash_addr = bank->base;
-	int i;
 
 	bank->num_sectors = 10;
 	bank->sectors = calloc(bank->num_sectors,
 				sizeof(struct flash_sector));
-	for (i = 0; i < bank->num_sectors; i++) {
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
 		if (i < 4)
 			bank->sectors[i].size = 8 * 1024;
 		else if (i == 4)
@@ -702,7 +704,7 @@ static const struct command_registration fm4_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-struct flash_driver fm4_flash = {
+const struct flash_driver fm4_flash = {
 	.name = "fm4",
 	.commands = fm4_command_handlers,
 	.flash_bank_command = fm4_flash_bank_command,

@@ -30,7 +30,7 @@
 #define MIPS32_PRACC_FASTDATA_AREA		0xFF200000
 #define MIPS32_PRACC_FASTDATA_SIZE		16
 #define MIPS32_PRACC_BASE_ADDR			0xFF200000
-#define MIPS32_PRACC_TEXT				0xFF200200
+#define MIPS32_PRACC_TEXT			0xFF200200
 #define MIPS32_PRACC_PARAM_OUT			0xFF202000
 
 #define PRACC_UPPER_BASE_ADDR			(MIPS32_PRACC_BASE_ADDR >> 16)
@@ -38,10 +38,10 @@
 #define PRACC_MAX_INSTRUCTIONS			(PRACC_MAX_CODE / 4)
 #define PRACC_OUT_OFFSET			(MIPS32_PRACC_PARAM_OUT - MIPS32_PRACC_BASE_ADDR)
 
-#define MIPS32_FASTDATA_HANDLER_SIZE	0x80
-#define UPPER16(uint32_t)				(uint32_t >> 16)
-#define LOWER16(uint32_t)				(uint32_t & 0xFFFF)
-#define NEG16(v)						(((~(v)) + 1) & 0xFFFF)
+#define MIPS32_FASTDATA_HANDLER_SIZE		0x80
+#define UPPER16(addr)				((addr) >> 16)
+#define LOWER16(addr)				((addr) & 0xFFFF)
+#define NEG16(v)				(((~(v)) + 1) & 0xFFFF)
 #define SWAP16(v)				((LOWER16(v) << 16) | (UPPER16(v)))
 /*#define NEG18(v) (((~(v)) + 1) & 0x3FFFF)*/
 
@@ -58,7 +58,7 @@ struct pracc_queue_info {
 	int retval;
 	int code_count;
 	int store_count;
-	int max_code;		/* max intstructions with currently allocated memory */
+	int max_code;		/* max instructions with currently allocated memory */
 	pa_list *pracc_list;	/* Code and store addresses at dmseg */
 };
 
@@ -93,7 +93,7 @@ int mips32_pracc_exec(struct mips_ejtag *ejtag_info, struct pracc_queue_info *ct
  * @param[in] cp0_reg Number of copro C0 register we want to read
  * @param[in] cp0_sel Select for the given C0 register
  *
- * @return ERROR_OK on Sucess, ERROR_FAIL otherwise
+ * @return ERROR_OK on Success, ERROR_FAIL otherwise
  */
 int mips32_cp0_read(struct mips_ejtag *ejtag_info,
 		uint32_t *val, uint32_t cp0_reg, uint32_t cp0_sel);
@@ -109,7 +109,7 @@ int mips32_cp0_read(struct mips_ejtag *ejtag_info,
  * @param[in] cp0_reg Number of copro C0 register we want to write to
  * @param[in] cp0_sel Select for the given C0 register
  *
- * @return ERROR_OK on Sucess, ERROR_FAIL otherwise
+ * @return ERROR_OK on Success, ERROR_FAIL otherwise
  */
 int mips32_cp0_write(struct mips_ejtag *ejtag_info,
 		uint32_t val, uint32_t cp0_reg, uint32_t cp0_sel);

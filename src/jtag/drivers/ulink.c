@@ -187,12 +187,7 @@ void ulink_clear_queue(struct ulink *device);
 int ulink_append_queue(struct ulink *device, struct ulink_cmd *ulink_cmd);
 int ulink_execute_queued_commands(struct ulink *device, int timeout);
 
-#ifdef _DEBUG_JTAG_IO_
-const char *ulink_cmd_id_string(uint8_t id);
-void ulink_print_command(struct ulink_cmd *ulink_cmd);
-void ulink_print_queue(struct ulink *device);
-static int ulink_calculate_frequency(enum ulink_delay_type type, int delay, long *f);
-#endif
+static void ulink_print_queue(struct ulink *device);
 
 int ulink_append_scan_cmd(struct ulink *device,
 		enum scan_type scan_type,
@@ -240,7 +235,7 @@ int ulink_queue_stableclocks(struct ulink *device, struct jtag_command *cmd);
 int ulink_post_process_scan(struct ulink_cmd *ulink_cmd);
 int ulink_post_process_queue(struct ulink *device);
 
-/* JTAG driver functions (registered in struct jtag_interface) */
+/* adapter driver functions */
 static int ulink_execute_queue(void);
 static int ulink_khz(int khz, int *jtag_speed);
 static int ulink_speed(int speed);
@@ -655,7 +650,7 @@ void ulink_clear_queue(struct ulink *device)
 int ulink_append_queue(struct ulink *device, struct ulink_cmd *ulink_cmd)
 {
 	int newsize_out, newsize_in;
-	int ret;
+	int ret = ERROR_OK;
 
 	newsize_out = ulink_get_queue_size(device, PAYLOAD_DIRECTION_OUT) + 1
 		+ ulink_cmd->payload_out_size;
@@ -668,14 +663,12 @@ int ulink_append_queue(struct ulink *device, struct ulink_cmd *ulink_cmd)
 		/* New command does not fit. Execute all commands in queue before starting
 		 * new queue with the current command as first entry. */
 		ret = ulink_execute_queued_commands(device, USB_TIMEOUT);
-		if (ret != ERROR_OK)
-			return ret;
 
-		ret = ulink_post_process_queue(device);
-		if (ret != ERROR_OK)
-			return ret;
+		if (ret == ERROR_OK)
+			ret = ulink_post_process_queue(device);
 
-		ulink_clear_queue(device);
+		if (ret == ERROR_OK)
+			ulink_clear_queue(device);
 	}
 
 	if (device->queue_start == NULL) {
@@ -692,7 +685,10 @@ int ulink_append_queue(struct ulink *device, struct ulink_cmd *ulink_cmd)
 		device->queue_end = ulink_cmd;
 	}
 
-	return ERROR_OK;
+	if (ret != ERROR_OK)
+		ulink_clear_queue(device);
+
+	return ret;
 }
 
 /**
@@ -708,9 +704,8 @@ int ulink_execute_queued_commands(struct ulink *device, int timeout)
 	int ret, i, index_out, index_in, count_out, count_in, transferred;
 	uint8_t buffer[64];
 
-#ifdef _DEBUG_JTAG_IO_
-	ulink_print_queue(device);
-#endif
+	if (LOG_LEVEL_IS(LOG_LVL_DEBUG_IO))
+		ulink_print_queue(device);
 
 	index_out = 0;
 	count_out = 0;
@@ -759,71 +754,51 @@ int ulink_execute_queued_commands(struct ulink *device, int timeout)
 	return ERROR_OK;
 }
 
-#ifdef _DEBUG_JTAG_IO_
-
 /**
  * Convert an OpenULINK command ID (\a id) to a human-readable string.
  *
  * @param id the OpenULINK command ID.
  * @return the corresponding human-readable string.
  */
-const char *ulink_cmd_id_string(uint8_t id)
+static const char *ulink_cmd_id_string(uint8_t id)
 {
 	switch (id) {
-	    case CMD_SCAN_IN:
-		    return "CMD_SCAN_IN";
-		    break;
-	    case CMD_SLOW_SCAN_IN:
-		    return "CMD_SLOW_SCAN_IN";
-		    break;
-	    case CMD_SCAN_OUT:
-		    return "CMD_SCAN_OUT";
-		    break;
-	    case CMD_SLOW_SCAN_OUT:
-		    return "CMD_SLOW_SCAN_OUT";
-		    break;
-	    case CMD_SCAN_IO:
-		    return "CMD_SCAN_IO";
-		    break;
-	    case CMD_SLOW_SCAN_IO:
-		    return "CMD_SLOW_SCAN_IO";
-		    break;
-	    case CMD_CLOCK_TMS:
-		    return "CMD_CLOCK_TMS";
-		    break;
-	    case CMD_SLOW_CLOCK_TMS:
-		    return "CMD_SLOW_CLOCK_TMS";
-		    break;
-	    case CMD_CLOCK_TCK:
-		    return "CMD_CLOCK_TCK";
-		    break;
-	    case CMD_SLOW_CLOCK_TCK:
-		    return "CMD_SLOW_CLOCK_TCK";
-		    break;
-	    case CMD_SLEEP_US:
-		    return "CMD_SLEEP_US";
-		    break;
-	    case CMD_SLEEP_MS:
-		    return "CMD_SLEEP_MS";
-		    break;
-	    case CMD_GET_SIGNALS:
-		    return "CMD_GET_SIGNALS";
-		    break;
-	    case CMD_SET_SIGNALS:
-		    return "CMD_SET_SIGNALS";
-		    break;
-	    case CMD_CONFIGURE_TCK_FREQ:
-		    return "CMD_CONFIGURE_TCK_FREQ";
-		    break;
-	    case CMD_SET_LEDS:
-		    return "CMD_SET_LEDS";
-		    break;
-	    case CMD_TEST:
-		    return "CMD_TEST";
-		    break;
-	    default:
-		    return "CMD_UNKNOWN";
-		    break;
+	case CMD_SCAN_IN:
+		return "CMD_SCAN_IN";
+	case CMD_SLOW_SCAN_IN:
+		return "CMD_SLOW_SCAN_IN";
+	case CMD_SCAN_OUT:
+		return "CMD_SCAN_OUT";
+	case CMD_SLOW_SCAN_OUT:
+		return "CMD_SLOW_SCAN_OUT";
+	case CMD_SCAN_IO:
+		return "CMD_SCAN_IO";
+	case CMD_SLOW_SCAN_IO:
+		return "CMD_SLOW_SCAN_IO";
+	case CMD_CLOCK_TMS:
+		return "CMD_CLOCK_TMS";
+	case CMD_SLOW_CLOCK_TMS:
+		return "CMD_SLOW_CLOCK_TMS";
+	case CMD_CLOCK_TCK:
+		return "CMD_CLOCK_TCK";
+	case CMD_SLOW_CLOCK_TCK:
+		return "CMD_SLOW_CLOCK_TCK";
+	case CMD_SLEEP_US:
+		return "CMD_SLEEP_US";
+	case CMD_SLEEP_MS:
+		return "CMD_SLEEP_MS";
+	case CMD_GET_SIGNALS:
+		return "CMD_GET_SIGNALS";
+	case CMD_SET_SIGNALS:
+		return "CMD_SET_SIGNALS";
+	case CMD_CONFIGURE_TCK_FREQ:
+		return "CMD_CONFIGURE_TCK_FREQ";
+	case CMD_SET_LEDS:
+		return "CMD_SET_LEDS";
+	case CMD_TEST:
+		return "CMD_TEST";
+	default:
+		return "CMD_UNKNOWN";
 	}
 }
 
@@ -832,7 +807,7 @@ const char *ulink_cmd_id_string(uint8_t id)
  *
  * @param ulink_cmd pointer to OpenULINK command.
  */
-void ulink_print_command(struct ulink_cmd *ulink_cmd)
+static void ulink_print_command(struct ulink_cmd *ulink_cmd)
 {
 	int i;
 
@@ -850,7 +825,7 @@ void ulink_print_command(struct ulink_cmd *ulink_cmd)
  *
  * @param device pointer to struct ulink identifying ULINK driver instance.
  */
-void ulink_print_queue(struct ulink *device)
+static void ulink_print_queue(struct ulink *device)
 {
 	struct ulink_cmd *current;
 
@@ -859,8 +834,6 @@ void ulink_print_queue(struct ulink *device)
 	for (current = device->queue_start; current; current = current->next)
 		ulink_print_command(current);
 }
-
-#endif	/* _DEBUG_JTAG_IO_ */
 
 /**
  * Perform JTAG scan
@@ -1298,7 +1271,7 @@ int ulink_append_test_cmd(struct ulink *device)
  *   1. Maximum possible frequency without any artificial delay
  *   2. Variable frequency with artificial linear delay loop
  *
- * To set the ULINK to maximum frequency, it is only neccessary to use the
+ * To set the ULINK to maximum frequency, it is only necessary to use the
  * corresponding command IDs. To set the ULINK to a lower frequency, the
  * delay loop top values have to be calculated first. Then, a
  * CMD_CONFIGURE_TCK_FREQ command needs to be sent to the ULINK device.
@@ -1367,7 +1340,6 @@ int ulink_calculate_delay(enum ulink_delay_type type, long f, int *delay)
 	return ERROR_OK;
 }
 
-#ifdef _DEBUG_JTAG_IO_
 /**
  * Calculate frequency for a given delay value.
  *
@@ -1378,16 +1350,14 @@ int ulink_calculate_delay(enum ulink_delay_type type, long f, int *delay)
  *
  * @param type for which command to calculate the delay value.
  * @param delay delay value for which to calculate the resulting TCK frequency.
- * @param f where to store the resulting TCK frequency.
- * @return on success: ERROR_OK
- * @return on failure: ERROR_FAIL
+ * @return the resulting TCK frequency
  */
-static int ulink_calculate_frequency(enum ulink_delay_type type, int delay, long *f)
+static long ulink_calculate_frequency(enum ulink_delay_type type, int delay)
 {
-	float t, f_float, f_rounded;
+	float t, f_float;
 
 	if (delay > 255)
-		return ERROR_FAIL;
+		return 0;
 
 	switch (type) {
 	    case DELAY_CLOCK_TCK:
@@ -1421,17 +1391,12 @@ static int ulink_calculate_frequency(enum ulink_delay_type type, int delay, long
 			    t = (float)(4E-6) * (float)(delay) + (float)(1.3132E-5);
 		    break;
 	    default:
-		    return ERROR_FAIL;
-		    break;
+		    return 0;
 	}
 
 	f_float = 1.0 / t;
-	f_rounded = roundf(f_float);
-	*f = (long)f_rounded;
-
-	return ERROR_OK;
+	return roundf(f_float);
 }
-#endif
 
 /******************* Interface between OpenULINK and OpenOCD ******************/
 
@@ -1645,6 +1610,7 @@ int ulink_queue_scan(struct ulink *device, struct jtag_command *cmd)
 
 		if (ret != ERROR_OK) {
 			free(tdi_buffer_start);
+			free(tdo_buffer_start);
 			return ret;
 		}
 	}
@@ -2065,31 +2031,21 @@ static int ulink_khz(int khz, int *jtag_speed)
 			return ret;
 	}
 
-#ifdef _DEBUG_JTAG_IO_
-	long f_tck = 0, f_tms = 0, f_scan_in = 0, f_scan_out = 0, f_scan_io = 0;
-
-	ulink_calculate_frequency(DELAY_CLOCK_TCK, ulink_handle->delay_clock_tck,
-		&f_tck);
-	ulink_calculate_frequency(DELAY_CLOCK_TMS, ulink_handle->delay_clock_tms,
-		&f_tms);
-	ulink_calculate_frequency(DELAY_SCAN_IN, ulink_handle->delay_scan_in,
-		&f_scan_in);
-	ulink_calculate_frequency(DELAY_SCAN_OUT, ulink_handle->delay_scan_out,
-		&f_scan_out);
-	ulink_calculate_frequency(DELAY_SCAN_IO, ulink_handle->delay_scan_io,
-		&f_scan_io);
-
-	DEBUG_JTAG_IO("ULINK TCK setup: delay_tck      = %i (%li Hz),",
-		ulink_handle->delay_clock_tck, f_tck);
-	DEBUG_JTAG_IO("                 delay_tms      = %i (%li Hz),",
-		ulink_handle->delay_clock_tms, f_tms);
-	DEBUG_JTAG_IO("                 delay_scan_in  = %i (%li Hz),",
-		ulink_handle->delay_scan_in, f_scan_in);
-	DEBUG_JTAG_IO("                 delay_scan_out = %i (%li Hz),",
-		ulink_handle->delay_scan_out, f_scan_out);
-	DEBUG_JTAG_IO("                 delay_scan_io  = %i (%li Hz),",
-		ulink_handle->delay_scan_io, f_scan_io);
-#endif
+	LOG_DEBUG_IO("ULINK TCK setup: delay_tck      = %i (%li Hz),",
+		ulink_handle->delay_clock_tck,
+		ulink_calculate_frequency(DELAY_CLOCK_TCK, ulink_handle->delay_clock_tck));
+	LOG_DEBUG_IO("                 delay_tms      = %i (%li Hz),",
+		ulink_handle->delay_clock_tms,
+		ulink_calculate_frequency(DELAY_CLOCK_TMS, ulink_handle->delay_clock_tms));
+	LOG_DEBUG_IO("                 delay_scan_in  = %i (%li Hz),",
+		ulink_handle->delay_scan_in,
+		ulink_calculate_frequency(DELAY_SCAN_IN, ulink_handle->delay_scan_in));
+	LOG_DEBUG_IO("                 delay_scan_out = %i (%li Hz),",
+		ulink_handle->delay_scan_out,
+		ulink_calculate_frequency(DELAY_SCAN_OUT, ulink_handle->delay_scan_out));
+	LOG_DEBUG_IO("                 delay_scan_io  = %i (%li Hz),",
+		ulink_handle->delay_scan_io,
+		ulink_calculate_frequency(DELAY_SCAN_IO, ulink_handle->delay_scan_io));
 
 	/* Configure the ULINK device with the new delay values */
 	ret = ulink_append_configure_tck_cmd(ulink_handle,
@@ -2237,14 +2193,17 @@ static int ulink_init(void)
 	}
 	ulink_clear_queue(ulink_handle);
 
-	ulink_append_get_signals_cmd(ulink_handle);
-	ulink_execute_queued_commands(ulink_handle, 200);
+	ret = ulink_append_get_signals_cmd(ulink_handle);
+	if (ret == ERROR_OK)
+		ret = ulink_execute_queued_commands(ulink_handle, 200);
 
-	/* Post-process the single CMD_GET_SIGNALS command */
-	input_signals = ulink_handle->queue_start->payload_in[0];
-	output_signals = ulink_handle->queue_start->payload_in[1];
+	if (ret == ERROR_OK) {
+		/* Post-process the single CMD_GET_SIGNALS command */
+		input_signals = ulink_handle->queue_start->payload_in[0];
+		output_signals = ulink_handle->queue_start->payload_in[1];
 
-	ulink_print_signal_states(input_signals, output_signals);
+		ulink_print_signal_states(input_signals, output_signals);
+	}
 
 	ulink_clear_queue(ulink_handle);
 
@@ -2300,17 +2259,20 @@ static const struct command_registration ulink_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE,
 };
 
-struct jtag_interface ulink_interface = {
-	.name = "ulink",
-
-	.commands = ulink_command_handlers,
-	.transports = jtag_only,
-
+static struct jtag_interface ulink_interface = {
 	.execute_queue = ulink_execute_queue,
-	.khz = ulink_khz,
-	.speed = ulink_speed,
-	.speed_div = ulink_speed_div,
+};
+
+struct adapter_driver ulink_adapter_driver = {
+	.name = "ulink",
+	.transports = jtag_only,
+	.commands = ulink_command_handlers,
 
 	.init = ulink_init,
-	.quit = ulink_quit
+	.quit = ulink_quit,
+	.speed = ulink_speed,
+	.khz = ulink_khz,
+	.speed_div = ulink_speed_div,
+
+	.jtag_ops = &ulink_interface,
 };

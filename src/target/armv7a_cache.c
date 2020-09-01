@@ -409,7 +409,7 @@ int armv7a_cache_flush_virt(struct target *target, uint32_t virt,
  * We assume that target core was chosen correctly. It means if same data
  * was handled by two cores, other core will loose the changes. Since it
  * is impossible to know (FIXME) which core has correct data, keep in mind
- * that some kind of data lost or korruption is possible.
+ * that some kind of data lost or corruption is possible.
  * Possible scenario:
  *  - core1 loaded and changed data on 0x12345678
  *  - we halted target and modified same data on core0
@@ -431,7 +431,7 @@ COMMAND_HANDLER(arm7a_l1_cache_info_cmd)
 	struct target *target = get_current_target(CMD_CTX);
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 
-	return armv7a_handle_cache_info_command(CMD_CTX,
+	return armv7a_handle_cache_info_command(CMD,
 			&armv7a->armv7a_mmu.armv7a_cache);
 }
 
@@ -513,7 +513,7 @@ COMMAND_HANDLER(arm7a_cache_disable_auto_cmd)
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 
 	if (CMD_ARGC == 0) {
-		command_print(CMD_CTX, "auto cache is %s",
+		command_print(CMD, "auto cache is %s",
 			armv7a->armv7a_mmu.armv7a_cache.auto_cache_enabled ? "enabled" : "disabled");
 		return ERROR_OK;
 	}
@@ -577,7 +577,7 @@ const struct command_registration arm7a_l1_di_cache_group_handlers[] = {
 		.name = "info",
 		.handler = arm7a_l1_cache_info_cmd,
 		.mode = COMMAND_ANY,
-		.help = "print cache realted information",
+		.help = "print cache related information",
 		.usage = "",
 	},
 	{

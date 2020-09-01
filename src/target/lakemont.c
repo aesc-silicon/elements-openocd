@@ -322,15 +322,15 @@ static int restore_context(struct target *t)
 	}
 
 	for (i = 0; i < (x86_32->cache->num_regs); i++) {
-		x86_32->cache->reg_list[i].dirty = 0;
-		x86_32->cache->reg_list[i].valid = 0;
+		x86_32->cache->reg_list[i].dirty = false;
+		x86_32->cache->reg_list[i].valid = false;
 	}
 	return err;
 }
 
 /*
  * we keep reg_cache in sync with hardware at halt/resume time, we avoid
- * writing to real hardware here bacause pm_regs reflects the hardware
+ * writing to real hardware here because pm_regs reflects the hardware
  * while we are halted then reg_cache syncs with hw on resume
  * TODO - in order for "reg eip force" to work it assume get/set reads
  * and writes from hardware, may be other reasons also because generally
@@ -357,13 +357,13 @@ static int lakemont_set_core_reg(struct reg *reg, uint8_t *buf)
 	if (check_not_halted(t))
 		return ERROR_TARGET_NOT_HALTED;
 	buf_set_u32(reg->value, 0, 32, value);
-	reg->dirty = 1;
-	reg->valid = 1;
+	reg->dirty = true;
+	reg->valid = true;
 	return ERROR_OK;
 }
 
 static const struct reg_arch_type lakemont_reg_type = {
-	/* these get called if reg_cache doesnt have a "valid" value
+	/* these get called if reg_cache doesn't have a "valid" value
 	 * of an individual reg eg "reg eip" but not for "reg" block
 	 */
 	.get = lakemont_get_core_reg,
@@ -405,8 +405,8 @@ struct reg_cache *lakemont_build_reg_cache(struct target *t)
 		reg_list[i].name = regs[i].name;
 		reg_list[i].size = 32;
 		reg_list[i].value = calloc(1, 4);
-		reg_list[i].dirty = 0;
-		reg_list[i].valid = 0;
+		reg_list[i].dirty = false;
+		reg_list[i].valid = false;
 		reg_list[i].type = &lakemont_reg_type;
 		reg_list[i].arch_info = &arch_info[i];
 
@@ -649,7 +649,7 @@ static int read_hw_reg(struct target *t, int reg, uint32_t *regval, uint8_t cach
 	struct x86_32_common *x86_32 = target_to_x86_32(t);
 	struct lakemont_core_reg *arch_info;
 	arch_info = x86_32->cache->reg_list[reg].arch_info;
-	x86_32->flush = 0; /* dont flush scans till we have a batch */
+	x86_32->flush = 0; /* don't flush scans till we have a batch */
 	if (submit_reg_pir(t, reg) != ERROR_OK)
 		return ERROR_FAIL;
 	if (submit_instruction_pir(t, SRAMACCESS) != ERROR_OK)
@@ -667,8 +667,8 @@ static int read_hw_reg(struct target *t, int reg, uint32_t *regval, uint8_t cach
 	*regval = buf_get_u32(scan.out, 0, 32);
 	if (cache) {
 		buf_set_u32(x86_32->cache->reg_list[reg].value, 0, 32, *regval);
-		x86_32->cache->reg_list[reg].valid = 1;
-		x86_32->cache->reg_list[reg].dirty = 0;
+		x86_32->cache->reg_list[reg].valid = true;
+		x86_32->cache->reg_list[reg].dirty = false;
 	}
 	LOG_DEBUG("reg=%s, op=0x%016" PRIx64 ", val=0x%08" PRIx32,
 			x86_32->cache->reg_list[reg].name,
@@ -693,7 +693,7 @@ static int write_hw_reg(struct target *t, int reg, uint32_t regval, uint8_t cach
 			arch_info->op,
 			regval);
 
-	x86_32->flush = 0; /* dont flush scans till we have a batch */
+	x86_32->flush = 0; /* don't flush scans till we have a batch */
 	if (submit_reg_pir(t, reg) != ERROR_OK)
 		return ERROR_FAIL;
 	if (submit_instruction_pir(t, SRAMACCESS) != ERROR_OK)
@@ -709,8 +709,8 @@ static int write_hw_reg(struct target *t, int reg, uint32_t regval, uint8_t cach
 
 	/* we are writing from the cache so ensure we reset flags */
 	if (cache) {
-		x86_32->cache->reg_list[reg].dirty = 0;
-		x86_32->cache->reg_list[reg].valid = 0;
+		x86_32->cache->reg_list[reg].dirty = false;
+		x86_32->cache->reg_list[reg].valid = false;
 	}
 	return ERROR_OK;
 }
@@ -943,12 +943,12 @@ int lakemont_poll(struct target *t)
 				if (bp != NULL) {
 					t->debug_reason = DBG_REASON_BREAKPOINT;
 					if (bp->type == BKPT_SOFT) {
-						/* The EIP is now pointing the the next byte after the
+						/* The EIP is now pointing the next byte after the
 						 * breakpoint instruction. This needs to be corrected.
 						 */
 						buf_set_u32(x86_32->cache->reg_list[EIP].value, 0, 32, eip-1);
-						x86_32->cache->reg_list[EIP].dirty = 1;
-						x86_32->cache->reg_list[EIP].valid = 1;
+						x86_32->cache->reg_list[EIP].dirty = true;
+						x86_32->cache->reg_list[EIP].valid = true;
 						LOG_USER("hit software breakpoint at 0x%08" PRIx32, eip-1);
 					} else {
 						/* it's not a hardware breakpoint (checked already in DR6 state)

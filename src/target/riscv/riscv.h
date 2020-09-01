@@ -36,6 +36,11 @@ enum riscv_halt_reason {
 };
 
 typedef struct {
+	struct target *target;
+	unsigned custom_number;
+} riscv_reg_info_t;
+
+typedef struct {
 	unsigned dtm_version;
 
 	struct command_context *cmd_ctx;
@@ -91,15 +96,19 @@ typedef struct {
 
 	bool triggers_enumerated;
 
+	/* Decremented every scan, and when it reaches 0 we clear the learned
+	 * delays, causing them to be relearned. Used for testing. */
+	int reset_delays_wait;
+
 	/* Helper functions that target the various RISC-V debug spec
 	 * implementations. */
 	int (*get_register)(struct target *target,
 		riscv_reg_t *value, int hid, int rid);
-	int (*set_register)(struct target *, int hartid, int regid,
+	int (*set_register)(struct target *target, int hartid, int regid,
 			uint64_t value);
-	int (*select_current_hart)(struct target *);
+	int (*select_current_hart)(struct target *target);
 	bool (*is_halted)(struct target *target);
-	int (*halt_current_hart)(struct target *);
+	int (*halt_current_hart)(struct target *target);
 	int (*resume_current_hart)(struct target *target);
 	int (*step_current_hart)(struct target *target);
 	int (*on_halt)(struct target *target);
@@ -120,6 +129,11 @@ typedef struct {
 
 	int (*dmi_read)(struct target *target, uint32_t *value, uint32_t address);
 	int (*dmi_write)(struct target *target, uint32_t address, uint32_t value);
+
+	int (*test_sba_config_reg)(struct target *target, target_addr_t legal_address,
+			uint32_t num_words, target_addr_t illegal_address, bool run_sbbusyerror_test);
+
+	int (*test_compliance)(struct target *target);
 } riscv_info_t;
 
 /* Wall-clock timeout for a command/access. Settable via RISC-V Target commands.*/
@@ -137,11 +151,11 @@ static inline riscv_info_t *riscv_info(const struct target *target)
 { return target->arch_info; }
 #define RISCV_INFO(R) riscv_info_t *R = riscv_info(target);
 
-extern uint8_t ir_dtmcontrol[1];
+extern uint8_t ir_dtmcontrol[4];
 extern struct scan_field select_dtmcontrol;
-extern uint8_t ir_dbus[1];
+extern uint8_t ir_dbus[4];
 extern struct scan_field select_dbus;
-extern uint8_t ir_idcode[1];
+extern uint8_t ir_idcode[4];
 extern struct scan_field select_idcode;
 
 /*** OpenOCD Interface */
@@ -201,12 +215,12 @@ int riscv_current_hartid(const struct target *target);
  * without requiring multiple targets.  */
 
 /* When using the RTOS to debug, this selects the hart that is currently being
- * debugged.  This doesn't propogate to the hardware. */
+ * debugged.  This doesn't propagate to the hardware. */
 void riscv_set_all_rtos_harts(struct target *target);
 void riscv_set_rtos_hartid(struct target *target, int hartid);
 
 /* Lists the number of harts in the system, which are assumed to be
- * concecutive and start with mhartid=0. */
+ * consecutive and start with mhartid=0. */
 int riscv_count_harts(struct target *target);
 
 /* Returns TRUE if the target has the given register on the given hart.  */
@@ -253,6 +267,7 @@ int riscv_remove_breakpoint(struct target *target,
 int riscv_add_watchpoint(struct target *target, struct watchpoint *watchpoint);
 int riscv_remove_watchpoint(struct target *target,
 		struct watchpoint *watchpoint);
+int riscv_hit_watchpoint(struct target *target, struct watchpoint **hit_wp_address);
 
 int riscv_init_registers(struct target *target);
 

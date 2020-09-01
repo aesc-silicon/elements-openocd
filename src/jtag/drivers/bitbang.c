@@ -30,9 +30,6 @@
 #include <jtag/interface.h>
 #include <jtag/commands.h>
 
-/* YUK! - but this is currently a global.... */
-extern struct jtag_interface *jtag_interface;
-
 /**
  * Function bitbang_stableclocks
  * issues a number of clock cycles while staying in a stable state.
@@ -103,7 +100,7 @@ static int bitbang_execute_tms(struct jtag_command *cmd)
 	unsigned num_bits = cmd->cmd.tms->num_bits;
 	const uint8_t *bits = cmd->cmd.tms->bits;
 
-	DEBUG_JTAG_IO("TMS: %d bits", num_bits);
+	LOG_DEBUG_IO("TMS: %d bits", num_bits);
 
 	int tms = 0;
 	for (unsigned i = 0; i < num_bits; i++) {
@@ -317,25 +314,10 @@ int bitbang_execute_queue(void)
 
 	while (cmd) {
 		switch (cmd->type) {
-			case JTAG_RESET:
-#ifdef _DEBUG_JTAG_IO_
-				LOG_DEBUG("reset trst: %i srst %i",
-				cmd->cmd.reset->trst,
-				cmd->cmd.reset->srst);
-#endif
-				if ((cmd->cmd.reset->trst == 1) ||
-						(cmd->cmd.reset->srst && (jtag_get_reset_config() & RESET_SRST_PULLS_TRST)))
-					tap_set_state(TAP_RESET);
-				if (bitbang_interface->reset(cmd->cmd.reset->trst,
-							cmd->cmd.reset->srst) != ERROR_OK)
-					return ERROR_FAIL;
-				break;
 			case JTAG_RUNTEST:
-#ifdef _DEBUG_JTAG_IO_
-				LOG_DEBUG("runtest %i cycles, end in %s",
+				LOG_DEBUG_IO("runtest %i cycles, end in %s",
 						cmd->cmd.runtest->num_cycles,
 						tap_state_name(cmd->cmd.runtest->end_state));
-#endif
 				bitbang_end_state(cmd->cmd.runtest->end_state);
 				if (bitbang_runtest(cmd->cmd.runtest->num_cycles) != ERROR_OK)
 					return ERROR_FAIL;
@@ -350,32 +332,26 @@ int bitbang_execute_queue(void)
 				break;
 
 			case JTAG_TLR_RESET:
-#ifdef _DEBUG_JTAG_IO_
-				LOG_DEBUG("statemove end in %s",
+				LOG_DEBUG_IO("statemove end in %s",
 						tap_state_name(cmd->cmd.statemove->end_state));
-#endif
 				bitbang_end_state(cmd->cmd.statemove->end_state);
 				if (bitbang_state_move(0) != ERROR_OK)
 					return ERROR_FAIL;
 				break;
 			case JTAG_PATHMOVE:
-#ifdef _DEBUG_JTAG_IO_
-				LOG_DEBUG("pathmove: %i states, end in %s",
+				LOG_DEBUG_IO("pathmove: %i states, end in %s",
 						cmd->cmd.pathmove->num_states,
 						tap_state_name(cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]));
-#endif
 				if (bitbang_path_move(cmd->cmd.pathmove) != ERROR_OK)
 					return ERROR_FAIL;
 				break;
 			case JTAG_SCAN:
 				bitbang_end_state(cmd->cmd.scan->end_state);
 				scan_size = jtag_build_buffer(cmd->cmd.scan, &buffer);
-#ifdef _DEBUG_JTAG_IO_
-				LOG_DEBUG("%s scan %d bits; end in %s",
+				LOG_DEBUG_IO("%s scan %d bits; end in %s",
 						(cmd->cmd.scan->ir_scan) ? "IR" : "DR",
 						scan_size,
 					tap_state_name(cmd->cmd.scan->end_state));
-#endif
 				type = jtag_scan_type(cmd->cmd.scan);
 				if (bitbang_scan(cmd->cmd.scan->ir_scan, type, buffer,
 							scan_size) != ERROR_OK)
@@ -386,9 +362,7 @@ int bitbang_execute_queue(void)
 					free(buffer);
 				break;
 			case JTAG_SLEEP:
-#ifdef _DEBUG_JTAG_IO_
-				LOG_DEBUG("sleep %" PRIi32, cmd->cmd.sleep->us);
-#endif
+				LOG_DEBUG_IO("sleep %" PRIi32, cmd->cmd.sleep->us);
 				jtag_sleep(cmd->cmd.sleep->us);
 				break;
 			case JTAG_TMS:
@@ -408,28 +382,29 @@ int bitbang_execute_queue(void)
 	return retval;
 }
 
-
-bool swd_mode;
 static int queued_retval;
 
 static int bitbang_swd_init(void)
 {
 	LOG_DEBUG("bitbang_swd_init");
-	swd_mode = true;
 	return ERROR_OK;
 }
 
-static void bitbang_exchange(bool rnw, uint8_t buf[], unsigned int offset, unsigned int bit_cnt)
+static void bitbang_swd_exchange(bool rnw, uint8_t buf[], unsigned int offset, unsigned int bit_cnt)
 {
-	LOG_DEBUG("bitbang_exchange");
-	int tdi;
+	LOG_DEBUG("bitbang_swd_exchange");
+
+	if (bitbang_interface->blink) {
+		/* FIXME: we should manage errors */
+		bitbang_interface->blink(1);
+	}
 
 	for (unsigned int i = offset; i < bit_cnt + offset; i++) {
 		int bytec = i/8;
 		int bcval = 1 << (i % 8);
-		tdi = !rnw && (buf[bytec] & bcval);
+		int swdio = !rnw && (buf[bytec] & bcval);
 
-		bitbang_interface->write(0, 0, tdi);
+		bitbang_interface->swd_write(0, swdio);
 
 		if (rnw && buf) {
 			if (bitbang_interface->swdio_read())
@@ -438,26 +413,31 @@ static void bitbang_exchange(bool rnw, uint8_t buf[], unsigned int offset, unsig
 				buf[bytec] &= ~bcval;
 		}
 
-		bitbang_interface->write(1, 0, tdi);
+		bitbang_interface->swd_write(1, swdio);
+	}
+
+	if (bitbang_interface->blink) {
+		/* FIXME: we should manage errors */
+		bitbang_interface->blink(0);
 	}
 }
 
-int bitbang_swd_switch_seq(enum swd_special_seq seq)
+static int bitbang_swd_switch_seq(enum swd_special_seq seq)
 {
 	LOG_DEBUG("bitbang_swd_switch_seq");
 
 	switch (seq) {
 	case LINE_RESET:
 		LOG_DEBUG("SWD line reset");
-		bitbang_exchange(false, (uint8_t *)swd_seq_line_reset, 0, swd_seq_line_reset_len);
+		bitbang_swd_exchange(false, (uint8_t *)swd_seq_line_reset, 0, swd_seq_line_reset_len);
 		break;
 	case JTAG_TO_SWD:
 		LOG_DEBUG("JTAG-to-SWD");
-		bitbang_exchange(false, (uint8_t *)swd_seq_jtag_to_swd, 0, swd_seq_jtag_to_swd_len);
+		bitbang_swd_exchange(false, (uint8_t *)swd_seq_jtag_to_swd, 0, swd_seq_jtag_to_swd_len);
 		break;
 	case SWD_TO_JTAG:
 		LOG_DEBUG("SWD-to-JTAG");
-		bitbang_exchange(false, (uint8_t *)swd_seq_swd_to_jtag, 0, swd_seq_swd_to_jtag_len);
+		bitbang_swd_exchange(false, (uint8_t *)swd_seq_swd_to_jtag, 0, swd_seq_swd_to_jtag_len);
 		break;
 	default:
 		LOG_ERROR("Sequence %d not supported", seq);
@@ -465,12 +445,6 @@ int bitbang_swd_switch_seq(enum swd_special_seq seq)
 	}
 
 	return ERROR_OK;
-}
-
-void bitbang_switch_to_swd(void)
-{
-	LOG_DEBUG("bitbang_switch_to_swd");
-	bitbang_exchange(false, (uint8_t *)swd_seq_jtag_to_swd, 0, swd_seq_jtag_to_swd_len);
 }
 
 static void swd_clear_sticky_errors(void)
@@ -493,10 +467,10 @@ static void bitbang_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay
 		uint8_t trn_ack_data_parity_trn[DIV_ROUND_UP(4 + 3 + 32 + 1 + 4, 8)];
 
 		cmd |= SWD_CMD_START | (1 << 7);
-		bitbang_exchange(false, &cmd, 0, 8);
+		bitbang_swd_exchange(false, &cmd, 0, 8);
 
 		bitbang_interface->swdio_drive(false);
-		bitbang_exchange(true, trn_ack_data_parity_trn, 0, 1 + 3 + 32 + 1 + 1);
+		bitbang_swd_exchange(true, trn_ack_data_parity_trn, 0, 1 + 3 + 32 + 1 + 1);
 		bitbang_interface->swdio_drive(true);
 
 		int ack = buf_get_u32(trn_ack_data_parity_trn, 1, 3);
@@ -520,7 +494,7 @@ static void bitbang_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay
 			if (value)
 				*value = data;
 			if (cmd & SWD_CMD_APnDP)
-				bitbang_exchange(true, NULL, 0, ap_delay_clk);
+				bitbang_swd_exchange(true, NULL, 0, ap_delay_clk);
 			return;
 		 case SWD_ACK_WAIT:
 			LOG_DEBUG("SWD_ACK_WAIT");
@@ -554,12 +528,12 @@ static void bitbang_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay
 		buf_set_u32(trn_ack_data_parity_trn, 1 + 3 + 1 + 32, 1, parity_u32(value));
 
 		cmd |= SWD_CMD_START | (1 << 7);
-		bitbang_exchange(false, &cmd, 0, 8);
+		bitbang_swd_exchange(false, &cmd, 0, 8);
 
 		bitbang_interface->swdio_drive(false);
-		bitbang_exchange(true, trn_ack_data_parity_trn, 0, 1 + 3 + 1);
+		bitbang_swd_exchange(true, trn_ack_data_parity_trn, 0, 1 + 3 + 1);
 		bitbang_interface->swdio_drive(true);
-		bitbang_exchange(false, trn_ack_data_parity_trn, 1 + 3 + 1, 32 + 1);
+		bitbang_swd_exchange(false, trn_ack_data_parity_trn, 1 + 3 + 1, 32 + 1);
 
 		int ack = buf_get_u32(trn_ack_data_parity_trn, 1, 3);
 		LOG_DEBUG("%s %s %s reg %X = %08"PRIx32,
@@ -572,7 +546,7 @@ static void bitbang_swd_write_reg(uint8_t cmd, uint32_t value, uint32_t ap_delay
 		switch (ack) {
 		 case SWD_ACK_OK:
 			if (cmd & SWD_CMD_APnDP)
-				bitbang_exchange(true, NULL, 0, ap_delay_clk);
+				bitbang_swd_exchange(true, NULL, 0, ap_delay_clk);
 			return;
 		 case SWD_ACK_WAIT:
 			LOG_DEBUG("SWD_ACK_WAIT");
@@ -595,7 +569,7 @@ static int bitbang_swd_run_queue(void)
 	LOG_DEBUG("bitbang_swd_run_queue");
 	/* A transaction must be followed by another transaction or at least 8 idle cycles to
 	 * ensure that data is clocked through the AP. */
-	bitbang_exchange(true, NULL, 0, 8);
+	bitbang_swd_exchange(true, NULL, 0, 8);
 
 	int retval = queued_retval;
 	queued_retval = ERROR_OK;

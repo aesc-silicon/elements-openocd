@@ -37,7 +37,7 @@
  * - asserting DBGRQ doesn't work if target is looping on the undef vector
  *
  * - the EICE version signature in the COMMS_CTL reg is next to the flow bits
- *   not at the top, and rather meaningless due to existing discrepencies
+ *   not at the top, and rather meaningless due to existing discrepancies
  *
  * - the DCC channel is half duplex (only one FIFO for both directions) with
  *   seemingly no proper flow control.
@@ -532,8 +532,8 @@ static int feroceon_bulk_write_memory(struct target *target,
 
 	/* set up target address in r0 */
 	buf_set_u32(arm->core_cache->reg_list[0].value, 0, 32, address);
-	arm->core_cache->reg_list[0].valid = 1;
-	arm->core_cache->reg_list[0].dirty = 1;
+	arm->core_cache->reg_list[0].valid = true;
+	arm->core_cache->reg_list[0].dirty = true;
 	arm->core_state = ARM_STATE_ARM;
 
 	embeddedice_write_reg(&arm7_9->eice_cache->reg_list[EICE_COMMS_DATA], 0);
@@ -575,12 +575,12 @@ static int feroceon_bulk_write_memory(struct target *target,
 	/* restore target state */
 	for (i = 0; i <= 5; i++) {
 		buf_set_u32(arm->core_cache->reg_list[i].value, 0, 32, save[i]);
-		arm->core_cache->reg_list[i].valid = 1;
-		arm->core_cache->reg_list[i].dirty = 1;
+		arm->core_cache->reg_list[i].valid = true;
+		arm->core_cache->reg_list[i].dirty = true;
 	}
 	buf_set_u32(arm->pc->value, 0, 32, save[i]);
-	arm->pc->valid = 1;
-	arm->pc->dirty = 1;
+	arm->pc->valid = true;
+	arm->pc->dirty = true;
 	arm->core_state = core_state;
 
 	return retval;
@@ -591,6 +591,11 @@ static int feroceon_init_target(struct command_context *cmd_ctx,
 {
 	arm9tdmi_init_target(cmd_ctx, target);
 	return ERROR_OK;
+}
+
+static void feroceon_deinit_target(struct target *target)
+{
+	arm9tdmi_deinit_target(target);
 }
 
 static void feroceon_common_setup(struct target *target)
@@ -710,6 +715,7 @@ struct target_type feroceon_target = {
 	.deassert_reset = arm7_9_deassert_reset,
 	.soft_reset_halt = arm926ejs_soft_reset_halt,
 
+	.get_gdb_arch = arm_get_gdb_arch,
 	.get_gdb_reg_list = arm_get_gdb_reg_list,
 
 	.read_memory = arm7_9_read_memory,
@@ -728,6 +734,7 @@ struct target_type feroceon_target = {
 	.commands = arm926ejs_command_handlers,
 	.target_create = feroceon_target_create,
 	.init_target = feroceon_init_target,
+	.deinit_target = feroceon_deinit_target,
 	.examine = feroceon_examine,
 };
 
@@ -747,6 +754,7 @@ struct target_type dragonite_target = {
 	.deassert_reset = arm7_9_deassert_reset,
 	.soft_reset_halt = arm7_9_soft_reset_halt,
 
+	.get_gdb_arch = arm_get_gdb_arch,
 	.get_gdb_reg_list = arm_get_gdb_reg_list,
 
 	.read_memory = arm7_9_read_memory,

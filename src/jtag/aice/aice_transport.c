@@ -47,6 +47,7 @@ static int jim_newtap_expected_id(Jim_Nvp *n, Jim_GetOptInfo *goi,
 		return JIM_ERR;
 	}
 
+	assert(pTap->expected_ids);
 	memcpy(new_expected_ids, pTap->expected_ids, expected_len);
 
 	new_expected_ids[pTap->expected_ids_cnt] = w;
@@ -165,15 +166,15 @@ COMMAND_HANDLER(handle_scan_chain_command)
 
 	aice_scan_jtag_chain();
 	tap = jtag_all_taps();
-	command_print(CMD_CTX,
+	command_print(CMD,
 		"   TapName             Enabled  IdCode     Expected   IrLen IrCap IrMask");
-	command_print(CMD_CTX,
+	command_print(CMD,
 		"-- ------------------- -------- ---------- ---------- ----- ----- ------");
 
 	while (tap) {
 		uint32_t expected, expected_mask, ii;
 
-		snprintf(expected_id, sizeof expected_id, "0x%08x",
+		snprintf(expected_id, sizeof(expected_id), "0x%08x",
 			(unsigned)((tap->expected_ids_cnt > 0)
 				   ? tap->expected_ids[0]
 				   : 0));
@@ -183,7 +184,7 @@ COMMAND_HANDLER(handle_scan_chain_command)
 		expected = buf_get_u32(tap->expected, 0, tap->ir_length);
 		expected_mask = buf_get_u32(tap->expected_mask, 0, tap->ir_length);
 
-		command_print(CMD_CTX,
+		command_print(CMD,
 			"%2d %-18s     %c     0x%08x %s %5d 0x%02x  0x%02x",
 			tap->abs_chain_position,
 			tap->dotted_name,
@@ -195,12 +196,12 @@ COMMAND_HANDLER(handle_scan_chain_command)
 			(unsigned int)(expected_mask));
 
 		for (ii = 1; ii < tap->expected_ids_cnt; ii++) {
-			snprintf(expected_id, sizeof expected_id, "0x%08x",
+			snprintf(expected_id, sizeof(expected_id), "0x%08x",
 				(unsigned) tap->expected_ids[ii]);
 			if (tap->ignore_version)
 				expected_id[2] = '*';
 
-			command_print(CMD_CTX,
+			command_print(CMD,
 				"                                           %s",
 				expected_id);
 		}
@@ -340,7 +341,7 @@ aice_transport_jtag_subcommand_handlers[] = {
 	},
 	{
 		.name = "configure",
-		.mode = COMMAND_EXEC,
+		.mode = COMMAND_ANY,
 		.jim_handler = jim_jtag_configure,
 		.help = "Provide a Tcl handler for the specified "
 			"TAP event.",
@@ -442,4 +443,3 @@ static void aice_constructor(void)
 {
 	transport_register(&aice_jtag_transport);
 }
-

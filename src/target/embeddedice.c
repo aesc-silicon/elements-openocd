@@ -205,8 +205,8 @@ struct reg_cache *embeddedice_build_reg_cache(struct target *target,
 	for (i = 0; i < num_regs; i++) {
 		reg_list[i].name = eice_regs[i].name;
 		reg_list[i].size = eice_regs[i].width;
-		reg_list[i].dirty = 0;
-		reg_list[i].valid = 0;
+		reg_list[i].dirty = false;
+		reg_list[i].valid = false;
 		reg_list[i].value = calloc(1, 4);
 		reg_list[i].arch_info = &arch_info[i];
 		reg_list[i].type = &eice_reg_type;
@@ -301,6 +301,22 @@ struct reg_cache *embeddedice_build_reg_cache(struct target *target,
 			(arm7_9->wp_available_max != 1) ? "s" : "");
 
 	return reg_cache;
+}
+
+/**
+ * Free all memory allocated for EmbeddedICE register cache
+ */
+void embeddedice_free_reg_cache(struct reg_cache *reg_cache)
+{
+	if (!reg_cache)
+		return;
+
+	for (unsigned int i = 0; i < reg_cache->num_regs; i++)
+		free(reg_cache->reg_list[i].value);
+
+	free(reg_cache->reg_list[0].arch_info);
+	free(reg_cache->reg_list);
+	free(reg_cache);
 }
 
 /**
@@ -470,8 +486,8 @@ void embeddedice_set_reg(struct reg *reg, uint32_t value)
 	embeddedice_write_reg(reg, value);
 
 	buf_set_u32(reg->value, 0, reg->size, value);
-	reg->valid = 1;
-	reg->dirty = 0;
+	reg->valid = true;
+	reg->dirty = false;
 
 }
 

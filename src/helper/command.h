@@ -79,6 +79,7 @@ struct command_invocation {
 	const char *name;
 	unsigned argc;
 	const char **argv;
+	Jim_Obj *output;
 };
 
 /**
@@ -121,6 +122,11 @@ struct command_invocation {
  */
 #define COMMAND_HELPER(name, extra ...) __COMMAND_HANDLER(name, extra)
 
+/**
+ * Use this macro to access the command being handled,
+ * rather than accessing the variable directly.  It may be moved.
+ */
+#define CMD (cmd)
 /**
  * Use this macro to access the context of the command being handled,
  * rather than accessing the variable directly.  It may be moved.
@@ -189,19 +195,9 @@ struct command {
 	struct command *next;
 };
 
-/**
- * @param c The command to be named.
- * @param delim The character to place between command names.
- * @returns A malloc'd string containing the full command name,
- * which may include one or more ancestor components.  Multiple names
- * are separated by single spaces.  The caller must free() the string
- * when done with it.
- */
-char *command_name(struct command *c, char delim);
-
 /*
  * Commands should be registered by filling in one or more of these
- * structures and passing them to register_command().
+ * structures and passing them to [un]register_commands().
  *
  * A conventioal format should be used for help strings, to provide both
  * usage and basic information:
@@ -220,7 +216,6 @@ struct command_registration {
 	const char *name;
 	command_handler_t handler;
 	Jim_CmdProc *jim_handler;
-	void *jim_handler_data;
 	enum command_mode mode;
 	const char *help;
 	/** a string listing the options and arguments, required or optional */
@@ -237,24 +232,6 @@ struct command_registration {
 
 /** Use this as the last entry in an array of command_registration records. */
 #define COMMAND_REGISTRATION_DONE { .name = NULL, .chain = NULL }
-
-/**
- * Register a command @c handler that can be called from scripts during
- * the execution @c mode specified.
- *
- * If @c parent is non-NULL, the new command will be registered as a
- * sub-command under it; otherwise, it will be available as a top-level
- * command.
- *
- * @param cmd_ctx The command_context in which to register the command.
- * @param parent Register this command as a child of this, or NULL to
- * register a top-level command.
- * @param rec A command_registration record that contains the desired
- * command parameters.
- * @returns The new command, if successful; otherwise, NULL.
- */
-struct command *register_command(struct command_context *cmd_ctx,
-				 struct command *parent, const struct command_registration *rec);
 
 /**
  * Register one or more commands in the specified context, as children
@@ -274,16 +251,6 @@ struct command *register_command(struct command_context *cmd_ctx,
 int register_commands(struct command_context *cmd_ctx, struct command *parent,
 		const struct command_registration *cmds);
 
-
-/**
- * Unregisters command @c name from the given context, @c cmd_ctx.
- * @param cmd_ctx The context of the registered command.
- * @param parent The parent of the given command, or NULL.
- * @param name The name of the command to unregister.
- * @returns ERROR_OK on success, or an error code.
- */
-int unregister_command(struct command_context *cmd_ctx,
-		struct command *parent, const char *name);
 /**
  * Unregisters all commands from the specfied context.
  * @param cmd_ctx The context that will be cleared of registered commands.
@@ -294,8 +261,6 @@ int unregister_all_commands(struct command_context *cmd_ctx,
 		struct command *parent);
 
 struct command *command_find_in_context(struct command_context *cmd_ctx,
-		const char *name);
-struct command *command_find_in_parent(struct command *parent,
 		const char *name);
 
 /**
@@ -348,9 +313,9 @@ struct command_context *copy_command_context(struct command_context *cmd_ctx);
  */
 void command_done(struct command_context *context);
 
-void command_print(struct command_context *context, const char *format, ...)
+void command_print(struct command_invocation *cmd, const char *format, ...)
 __attribute__ ((format (PRINTF_ATTRIBUTE_FORMAT, 2, 3)));
-void command_print_sameline(struct command_context *context, const char *format, ...)
+void command_print_sameline(struct command_invocation *cmd, const char *format, ...)
 __attribute__ ((format (PRINTF_ATTRIBUTE_FORMAT, 2, 3)));
 int command_run_line(struct command_context *context, char *line);
 int command_run_linef(struct command_context *context, const char *format, ...)
@@ -404,7 +369,7 @@ DECLARE_PARSE_WRAPPER(_target_addr, target_addr_t);
 	do { \
 		int retval_macro_tmp = parse_ ## type(in, &(out)); \
 		if (ERROR_OK != retval_macro_tmp) { \
-			command_print(CMD_CTX, stringify(out) \
+			command_print(CMD, stringify(out) \
 				" option value ('%s') is not valid", in); \
 			return retval_macro_tmp; \
 		} \
@@ -424,9 +389,9 @@ DECLARE_PARSE_WRAPPER(_target_addr, target_addr_t);
 		bool value; \
 		int retval_macro_tmp = command_parse_bool_arg(in, &value); \
 		if (ERROR_OK != retval_macro_tmp) { \
-			command_print(CMD_CTX, stringify(out) \
+			command_print(CMD, stringify(out) \
 				" option value ('%s') is not valid", in); \
-			command_print(CMD_CTX, "  choices are '%s' or '%s'", \
+			command_print(CMD, "  choices are '%s' or '%s'", \
 				on, off); \
 			return retval_macro_tmp; \
 		} \
@@ -443,7 +408,6 @@ COMMAND_HELPER(handle_command_parse_bool, bool *out, const char *label);
 #define COMMAND_PARSE_ENABLE(in, out) \
 	COMMAND_PARSE_BOOL(in, out, "enable", "disable")
 
-void script_debug(Jim_Interp *interp, const char *cmd,
-		  unsigned argc, Jim_Obj * const *argv);
+void script_debug(Jim_Interp *interp, unsigned int argc, Jim_Obj * const *argv);
 
 #endif /* OPENOCD_HELPER_COMMAND_H */

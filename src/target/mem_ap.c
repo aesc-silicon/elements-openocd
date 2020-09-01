@@ -31,7 +31,7 @@ struct mem_ap {
 
 static int mem_ap_target_create(struct target *target, Jim_Interp *interp)
 {
-	struct mem_ap *mem_ap = calloc(1, sizeof(struct mem_ap));
+	struct mem_ap *mem_ap;
 	struct adiv5_private_config *pc;
 
 	pc = (struct adiv5_private_config *)target->private_config;
@@ -40,6 +40,12 @@ static int mem_ap_target_create(struct target *target, Jim_Interp *interp)
 
 	if (pc->ap_num == DP_APSEL_INVALID) {
 		LOG_ERROR("AP number not specified");
+		return ERROR_FAIL;
+	}
+
+	mem_ap = calloc(1, sizeof(struct mem_ap));
+	if (mem_ap == NULL) {
+		LOG_ERROR("Out of memory");
 		return ERROR_FAIL;
 	}
 
@@ -57,6 +63,15 @@ static int mem_ap_init_target(struct command_context *cmd_ctx, struct target *ta
 	LOG_DEBUG("%s", __func__);
 	target->state = TARGET_UNKNOWN;
 	return ERROR_OK;
+}
+
+static void mem_ap_deinit_target(struct target *target)
+{
+	LOG_DEBUG("%s", __func__);
+
+	free(target->private_config);
+	free(target->arch_info);
+	return;
 }
 
 static int mem_ap_arch_state(struct target *target)
@@ -134,7 +149,7 @@ static int mem_ap_read_memory(struct target *target, target_addr_t address,
 {
 	struct mem_ap *mem_ap = target->arch_info;
 
-	LOG_DEBUG("Reading memory at physical address 0x" TARGET_ADDR_FMT
+	LOG_DEBUG("Reading memory at physical address " TARGET_ADDR_FMT
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);
 
 	if (count == 0 || buffer == NULL)
@@ -149,7 +164,7 @@ static int mem_ap_write_memory(struct target *target, target_addr_t address,
 {
 	struct mem_ap *mem_ap = target->arch_info;
 
-	LOG_DEBUG("Writing memory at physical address 0x" TARGET_ADDR_FMT
+	LOG_DEBUG("Writing memory at physical address " TARGET_ADDR_FMT
 		  "; size %" PRId32 "; count %" PRId32, address, size, count);
 
 	if (count == 0 || buffer == NULL)
@@ -163,6 +178,7 @@ struct target_type mem_ap_target = {
 
 	.target_create = mem_ap_target_create,
 	.init_target = mem_ap_init_target,
+	.deinit_target = mem_ap_deinit_target,
 	.examine = mem_ap_examine,
 	.target_jim_configure = adiv5_jim_configure,
 

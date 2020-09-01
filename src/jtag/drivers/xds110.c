@@ -29,10 +29,23 @@
 /* XDS110 USB serial number length */
 #define XDS110_SERIAL_LEN 8
 
+/* XDS110 stand-alone probe voltage supply limits */
+#define XDS110_MIN_VOLTAGE 1800
+#define XDS110_MAX_VOLTAGE 3600
+
+/* XDS110 stand-alone probe hardware ID */
+#define XDS110_STAND_ALONE_ID 0x21
+
 /* Firmware version that introduced OpenOCD support via block accesses */
 #define OCD_FIRMWARE_VERSION 0x02030011
 #define OCD_FIRMWARE_UPGRADE \
 	"XDS110: upgrade to version 2.3.0.11+ for improved support"
+
+/* Firmware version that introduced improved TCK performance */
+#define FAST_TCK_FIRMWARE_VERSION 0x03000000
+
+/* Firmware version that introduced 10 MHz and 12 MHz TCK support */
+#define FAST_TCK_PLUS_FIRMWARE_VERSION 0x03000003
 
 /***************************************************************************
  *   USB Connection Buffer Definitions                                     *
@@ -52,15 +65,6 @@
 #define USB_PAYLOAD_SIZE (MAX_DATA_BLOCK + 60)
 #endif
 #define MAX_RESULT_QUEUE (MAX_DATA_BLOCK / 4)
-
-/***************************************************************************
- *   USB Connection Endpoints                                              *
- ***************************************************************************/
-
-/* Bulk endpoints used by the XDS110 debug interface */
-#define INTERFACE_DEBUG (2)
-#define ENDPOINT_DEBUG_IN (3 | LIBUSB_ENDPOINT_IN)
-#define ENDPOINT_DEBUG_OUT (2 | LIBUSB_ENDPOINT_OUT)
 
 /***************************************************************************
  *   XDS110 Firmware API Definitions                                       *
@@ -84,8 +88,17 @@
 
 /* TCK frequency limits */
 #define XDS110_MIN_TCK_SPEED  100 /* kHz */
-#define XDS110_MAX_TCK_SPEED 2500 /* kHz */
-#define XDS110_TCK_PULSE_INCREMENT 66.0
+#define XDS110_MAX_SLOW_TCK_SPEED 2500 /* kHz */
+#define XDS110_MAX_FAST_TCK_SPEED 14000 /* kHz */
+#define XDS110_DEFAULT_TCK_SPEED 2500 /* kHz */
+
+/* Fixed TCK delay values for "Fast" TCK frequencies */
+#define FAST_TCK_DELAY_14000_KHZ 0
+#define FAST_TCK_DELAY_10000_KHZ 0xfffffffd
+#define FAST_TCK_DELAY_12000_KHZ 0xfffffffe
+#define FAST_TCK_DELAY_8500_KHZ 1
+#define FAST_TCK_DELAY_5500_KHZ 2
+/* For TCK frequencies below 5500 kHz, use calculated delay */
 
 /* Scan mode on connect */
 #define MODE_JTAG 1
@@ -162,6 +175,7 @@
 #define SWD_DISCONNECT   0x18 /* Switch from SWD to JTAG connection */
 #define CJTAG_CONNECT    0x2b /* Switch from JTAG to cJTAG connection */
 #define CJTAG_DISCONNECT 0x2c /* Switch from cJTAG to JTAG connection */
+#define XDS_SET_SUPPLY   0x32 /* Set up stand-alone probe upply voltage */
 #define OCD_DAP_REQUEST  0x3a /* Handle block of DAP requests */
 #define OCD_SCAN_REQUEST 0x3b /* Handle block of JTAG scan requests */
 #define OCD_PATHMOVE     0x3c /* Handle PATHMOVE to navigate JTAG states */
@@ -204,6 +218,13 @@ struct xds110_info {
 	unsigned char read_payload[USB_PAYLOAD_SIZE];
 	unsigned char write_packet[3];
 	unsigned char write_payload[USB_PAYLOAD_SIZE];
+	/* Device vid/pid */
+	uint16_t vid;
+	uint16_t pid;
+	/* Debug interface */
+	uint8_t interface;
+	uint8_t endpoint_in;
+	uint8_t endpoint_out;
 	/* Status flags */
 	bool is_connected;
 	bool is_cmapi_connected;
@@ -219,6 +240,8 @@ struct xds110_info {
 	uint32_t delay_count;
 	/* XDS110 serial number */
 	char serial[XDS110_SERIAL_LEN + 1];
+	/* XDS110 voltage supply setting */
+	uint32_t voltage;
 	/* XDS110 firmware and hardware version */
 	uint32_t firmware;
 	uint16_t hardware;
@@ -234,14 +257,20 @@ struct xds110_info {
 static struct xds110_info xds110 = {
 	.ctx = NULL,
 	.dev = NULL,
+	.vid = 0,
+	.pid = 0,
+	.interface = 0,
+	.endpoint_in = 0,
+	.endpoint_out = 0,
 	.is_connected = false,
 	.is_cmapi_connected = false,
 	.is_cmapi_acquired = false,
 	.is_swd_mode = false,
 	.is_ap_dirty = false,
-	.speed = XDS110_MAX_TCK_SPEED,
+	.speed = XDS110_DEFAULT_TCK_SPEED,
 	.delay_count = 0,
 	.serial = {0},
+	.voltage = 0,
 	.firmware = 0,
 	.hardware = 0,
 	.txn_request_size = 0,
@@ -294,12 +323,20 @@ static bool usb_connect(void)
 
 	struct libusb_device_descriptor desc;
 
-	uint16_t vid = 0x0451;
-	uint16_t pid = 0xbef3;
+	/* The vid/pids of possible XDS110 configurations */
+	uint16_t vids[] = { 0x0451, 0x0451, 0x1cbe };
+	uint16_t pids[] = { 0xbef3, 0xbef4, 0x02a5 };
+	/* Corresponding interface and endpoint numbers for configurations */
+	uint8_t interfaces[] = { 2, 2, 0 };
+	uint8_t endpoints_in[] = { 3, 3, 1 };
+	uint8_t endpoints_out[] = { 2, 2, 1 };
+
 	ssize_t count = 0;
 	ssize_t i = 0;
 	int result = 0;
 	bool found = false;
+	uint32_t device = 0;
+	bool match = false;
 
 	/* Initialize libusb context */
 	result = libusb_init(&ctx);
@@ -316,13 +353,21 @@ static bool usb_connect(void)
 	if (0 == result) {
 		/* Scan through list of devices for any XDS110s */
 		for (i = 0; i < count; i++) {
-			/* Check for device VID/PID match */
+			/* Check for device vid/pid match */
 			libusb_get_device_descriptor(list[i], &desc);
-			if (desc.idVendor == vid && desc.idProduct == pid) {
+			match = false;
+			for (device = 0; device < sizeof(vids)/sizeof(vids[0]); device++) {
+				if (desc.idVendor == vids[device] &&
+					desc.idProduct == pids[device]) {
+					match = true;
+					break;
+				}
+			}
+			if (match) {
 				result = libusb_open(list[i], &dev);
 				if (0 == result) {
-					const int MAX_DATA = 256;
-					unsigned char data[MAX_DATA + 1];
+					const int max_data = 256;
+					unsigned char data[max_data + 1];
 					*data = '\0';
 
 					/* May be the requested device if serial number matches */
@@ -333,7 +378,7 @@ static bool usb_connect(void)
 					} else {
 						/* Get the device's serial number string */
 						result = libusb_get_string_descriptor_ascii(dev,
-									desc.iSerialNumber, data, MAX_DATA);
+									desc.iSerialNumber, data, max_data);
 						if (0 < result &&
 							0 == strcmp((char *)data, (char *)xds110.serial)) {
 							found = true;
@@ -361,6 +406,15 @@ static bool usb_connect(void)
 	}
 
 	if (found) {
+		/* Save the vid/pid of the device we're using */
+		xds110.vid = vids[device];
+		xds110.pid = pids[device];
+
+		/* Save the debug interface and endpoints for the device */
+		xds110.interface = interfaces[device];
+		xds110.endpoint_in = endpoints_in[device] | LIBUSB_ENDPOINT_IN;
+		xds110.endpoint_out = endpoints_out[device] | LIBUSB_ENDPOINT_OUT;
+
 		/* Save the context and device handles */
 		xds110.ctx = ctx;
 		xds110.dev = dev;
@@ -369,7 +423,7 @@ static bool usb_connect(void)
 		(void)libusb_set_auto_detach_kernel_driver(dev, 1);
 
 		/* Claim the debug interface on the XDS110 */
-		result = libusb_claim_interface(dev, INTERFACE_DEBUG);
+		result = libusb_claim_interface(dev, xds110.interface);
 	} else {
 		/* Couldn't find an XDS110, flag the error */
 		result = -1;
@@ -379,7 +433,7 @@ static bool usb_connect(void)
 	if (0 != result) {
 		if (NULL != dev) {
 			/* Release the debug and data interface on the XDS110 */
-			(void)libusb_release_interface(dev, INTERFACE_DEBUG);
+			(void)libusb_release_interface(dev, xds110.interface);
 			libusb_close(dev);
 		}
 		if (NULL != ctx)
@@ -401,7 +455,7 @@ static void usb_disconnect(void)
 {
 	if (NULL != xds110.dev) {
 		/* Release the debug and data interface on the XDS110 */
-		(void)libusb_release_interface(xds110.dev, INTERFACE_DEBUG);
+		(void)libusb_release_interface(xds110.dev, xds110.interface);
 		libusb_close(xds110.dev);
 		xds110.dev = NULL;
 	}
@@ -425,7 +479,7 @@ static bool usb_read(unsigned char *buffer, int size, int *bytes_read,
 	if (0 == timeout)
 		timeout = DEFAULT_TIMEOUT;
 
-	result = libusb_bulk_transfer(xds110.dev, ENDPOINT_DEBUG_IN, buffer, size,
+	result = libusb_bulk_transfer(xds110.dev, xds110.endpoint_in, buffer, size,
 				bytes_read, timeout);
 
 	return (0 == result) ? true : false;
@@ -440,13 +494,13 @@ static bool usb_write(unsigned char *buffer, int size, int *written)
 	if (NULL == xds110.dev || NULL == buffer)
 		return false;
 
-	result = libusb_bulk_transfer(xds110.dev, ENDPOINT_DEBUG_OUT, buffer,
+	result = libusb_bulk_transfer(xds110.dev, xds110.endpoint_out, buffer,
 				size, &bytes_written, 0);
 
 	while (LIBUSB_ERROR_PIPE == result && retries < 3) {
 		/* Try clearing the pipe stall and retry transfer */
-		libusb_clear_halt(xds110.dev, ENDPOINT_DEBUG_OUT);
-		result = libusb_bulk_transfer(xds110.dev, ENDPOINT_DEBUG_OUT, buffer,
+		libusb_clear_halt(xds110.dev, xds110.endpoint_out);
+		result = libusb_bulk_transfer(xds110.dev, xds110.endpoint_out, buffer,
 					size, &bytes_written, 0);
 		retries++;
 	}
@@ -601,10 +655,15 @@ static bool xds_execute(uint32_t out_length, uint32_t in_length,
 			if (bytes_read != in_length) {
 				/* Unexpected amount of data returned */
 				success = false;
+				LOG_DEBUG("XDS110: command 0x%02x return %d bytes, expected %d",
+					xds110.write_payload[0], bytes_read, in_length);
 			} else {
 				/* Extract error code from return packet */
 				error = (int)xds110_get_u32(&xds110.read_payload[0]);
 				done = true;
+				if (SC_ERR_NONE != error)
+					LOG_DEBUG("XDS110: command 0x%02x returned error %d",
+						xds110.write_payload[0], error);
 			}
 		}
 	}
@@ -952,6 +1011,24 @@ static bool cjtag_disconnect(void)
 	return success;
 }
 
+static bool xds_set_supply(uint32_t voltage)
+{
+	uint8_t *volts_pntr = &xds110.write_payload[XDS_OUT_LEN + 0]; /* 32-bits */
+	uint8_t *source_pntr = &xds110.write_payload[XDS_OUT_LEN + 4]; /* 8-bits */
+
+	bool success;
+
+	xds110.write_payload[0] = XDS_SET_SUPPLY;
+
+	xds110_set_u32(volts_pntr, voltage);
+	*source_pntr = (uint8_t)(0 != voltage ? 1 : 0);
+
+	success = xds_execute(XDS_OUT_LEN + 5, XDS_IN_LEN, DEFAULT_ATTEMPTS,
+				DEFAULT_TIMEOUT);
+
+	return success;
+}
+
 static bool ocd_dap_request(uint8_t *dap_requests, uint32_t request_size,
 	uint32_t *dap_results, uint32_t result_count)
 {
@@ -1052,7 +1129,7 @@ static int xds110_swd_switch_seq(enum swd_special_seq seq)
 		xds110.is_cmapi_acquired = false;
 		/* Run sequence to put target in SWD mode */
 		success = swd_connect();
-		/* Re-iniitialize CMAPI API for DAP access */
+		/* Re-initialize CMAPI API for DAP access */
 		if (success) {
 			xds110.is_swd_mode = true;
 			success = cmapi_connect(&idcode);
@@ -1311,6 +1388,7 @@ static void xds110_show_info(void)
 {
 	uint32_t firmware = xds110.firmware;
 
+	LOG_INFO("XDS110: vid/pid = %04x/%04x", xds110.vid, xds110.pid);
 	LOG_INFO("XDS110: firmware version = %d.%d.%d.%d",
 		(((firmware >> 28) & 0xf) * 10) + ((firmware >> 24) & 0xf),
 		(((firmware >> 20) & 0xf) * 10) + ((firmware >> 16) & 0xf),
@@ -1318,7 +1396,7 @@ static void xds110_show_info(void)
 		(((firmware >>  4) & 0xf) * 10) + ((firmware >>  0) & 0xf));
 	LOG_INFO("XDS110: hardware version = 0x%04x", xds110.hardware);
 	if (0 != xds110.serial[0])
-		LOG_INFO("XDS110: serial number = %s)", xds110.serial);
+		LOG_INFO("XDS110: serial number = %s", xds110.serial);
 	if (xds110.is_swd_mode) {
 		LOG_INFO("XDS110: connected to target via SWD");
 		LOG_INFO("XDS110: SWCLK set to %d kHz", xds110.speed);
@@ -1387,6 +1465,20 @@ static int xds110_init(void)
 			/* Save the firmware and hardware version */
 			xds110.firmware = firmware;
 			xds110.hardware = hardware;
+		}
+	}
+
+	if (success) {
+		/* Set supply voltage for stand-alone probes */
+		if (XDS110_STAND_ALONE_ID == xds110.hardware) {
+			success = xds_set_supply(xds110.voltage);
+			/* Allow time for target device to power up */
+			/* (CC32xx takes up to 1300 ms before debug is enabled) */
+			alive_sleep(1500);
+		} else if (0 != xds110.voltage) {
+			/* Voltage supply not a feature of embedded probes */
+			LOG_WARNING(
+				"XDS110: ignoring supply voltage, not supported on this probe");
 		}
 	}
 
@@ -1544,45 +1636,58 @@ static void xds110_flush(void)
 	xds110.txn_result_count = 0;
 }
 
-static void xds110_execute_reset(struct jtag_command *cmd)
+static int xds110_reset(int trst, int srst)
 {
-	char trst;
-	char srst;
+	uint8_t value;
+	bool success;
+	int retval = ERROR_OK;
 
-	if (cmd->cmd.reset->trst != -1) {
-		if (cmd->cmd.reset->trst == 0) {
+	if (trst != -1) {
+		if (trst == 0) {
 			/* Deassert nTRST (active low) */
-			trst = 1;
+			value = 1;
 		} else {
 			/* Assert nTRST (active low) */
-			trst = 0;
+			value = 0;
 		}
-		(void)xds_set_trst(trst);
+		success = xds_set_trst(value);
+		if (!success)
+			retval = ERROR_FAIL;
 	}
 
-	if (cmd->cmd.reset->srst != -1) {
-		if (cmd->cmd.reset->srst == 0) {
+	if (srst != -1) {
+		if (srst == 0) {
 			/* Deassert nSRST (active low) */
-			srst = 1;
+			value = 1;
 		} else {
 			/* Assert nSRST (active low) */
-			srst = 0;
+			value = 0;
 		}
-		(void)xds_set_srst(srst);
+		success = xds_set_srst(value);
+		if (!success)
+			retval = ERROR_FAIL;
+
+		/* Toggle TCK to trigger HIB on CC13x/CC26x devices */
+		if (success && !xds110.is_swd_mode) {
+			/* Toggle TCK for about 50 ms */
+			success = xds_cycle_tck(xds110.speed * 50);
+		}
+
+		if (!success)
+			retval = ERROR_FAIL;
 	}
+
+	return retval;
 }
 
 static void xds110_execute_sleep(struct jtag_command *cmd)
 {
 	jtag_sleep(cmd->cmd.sleep->us);
-	return;
 }
 
 static void xds110_execute_tlr_reset(struct jtag_command *cmd)
 {
 	(void)xds_goto_state(XDS_JTAG_STATE_RESET);
-
-	return;
 }
 
 static void xds110_execute_pathmove(struct jtag_command *cmd)
@@ -1618,8 +1723,6 @@ static void xds110_execute_pathmove(struct jtag_command *cmd)
 	}
 
 	free((void *)path);
-
-	return;
 }
 
 static void xds110_queue_scan(struct jtag_command *cmd)
@@ -1691,8 +1794,6 @@ static void xds110_queue_scan(struct jtag_command *cmd)
 	}
 	xds110.txn_request_size += total_bytes;
 	xds110.txn_result_size += total_bytes;
-
-	return;
 }
 
 static void xds110_queue_runtest(struct jtag_command *cmd)
@@ -1712,8 +1813,6 @@ static void xds110_queue_runtest(struct jtag_command *cmd)
 	xds110.txn_requests[xds110.txn_request_size++] = (clocks >> 16) & 0xff;
 	xds110.txn_requests[xds110.txn_request_size++] = (clocks >> 24) & 0xff;
 	xds110.txn_requests[xds110.txn_request_size++] = end_state;
-
-	return;
 }
 
 static void xds110_queue_stableclocks(struct jtag_command *cmd)
@@ -1730,17 +1829,11 @@ static void xds110_queue_stableclocks(struct jtag_command *cmd)
 	xds110.txn_requests[xds110.txn_request_size++] = (clocks >>  8) & 0xff;
 	xds110.txn_requests[xds110.txn_request_size++] = (clocks >> 16) & 0xff;
 	xds110.txn_requests[xds110.txn_request_size++] = (clocks >> 24) & 0xff;
-
-	return;
 }
 
 static void xds110_execute_command(struct jtag_command *cmd)
 {
 	switch (cmd->type) {
-		case JTAG_RESET:
-			xds110_flush();
-			xds110_execute_reset(cmd);
-			break;
 		case JTAG_SLEEP:
 			xds110_flush();
 			xds110_execute_sleep(cmd);
@@ -1786,6 +1879,8 @@ static int xds110_execute_queue(void)
 
 static int xds110_speed(int speed)
 {
+	double freq_to_use;
+	uint32_t delay_count;
 	bool success;
 
 	if (speed == 0) {
@@ -1793,61 +1888,110 @@ static int xds110_speed(int speed)
 		return ERROR_JTAG_NOT_IMPLEMENTED;
 	}
 
-	if (speed > XDS110_MAX_TCK_SPEED) {
-		LOG_INFO("XDS110: reduce speed request: %dkHz to %dkHz maximum",
-			speed, XDS110_MAX_TCK_SPEED);
-		speed = XDS110_MAX_TCK_SPEED;
-	}
-
 	if (speed < XDS110_MIN_TCK_SPEED) {
-		LOG_INFO("XDS110: increase speed request: %dkHz to %dkHz minimum",
+		LOG_INFO("XDS110: increase speed request: %d kHz to %d kHz minimum",
 			speed, XDS110_MIN_TCK_SPEED);
 		speed = XDS110_MIN_TCK_SPEED;
 	}
 
-	/* The default is the maximum frequency the XDS110 can support */
-	uint32_t freq_to_use = XDS110_MAX_TCK_SPEED * 1000; /* Hz */
-	uint32_t delay_count = 0;
+	/* Older XDS110 firmware had inefficient scan routines and could only */
+	/* achieve a peak TCK frequency of about 2500 kHz */
+	if (xds110.firmware < FAST_TCK_FIRMWARE_VERSION) {
 
-	if (XDS110_MAX_TCK_SPEED != speed) {
-		freq_to_use = speed * 1000; /* Hz */
+		/* Check for request for top speed or higher */
+		if (speed >= XDS110_MAX_SLOW_TCK_SPEED) {
 
-		/* Calculate the delay count value */
-		double one_giga = 1000000000;
-		/* Get the pulse duration for the maximum frequency supported in ns */
-		double max_freq_pulse_duration = one_giga /
-			(XDS110_MAX_TCK_SPEED * 1000);
+			/* Inform user that speed was adjusted down to max possible */
+			if (speed > XDS110_MAX_SLOW_TCK_SPEED) {
+				LOG_INFO(
+					"XDS110: reduce speed request: %d kHz to %d kHz maximum",
+					speed, XDS110_MAX_SLOW_TCK_SPEED);
+				speed = XDS110_MAX_SLOW_TCK_SPEED;
+			}
+			delay_count = 0;
 
-		/* Convert frequency to pulse duration */
-		double freq_to_pulse_width_in_ns = one_giga / freq_to_use;
+		} else {
 
-		/*
-		 * Start with the pulse duration for the maximum frequency. Keep
-		 * decrementing the time added by each count value till the requested
-		 * frequency pulse is less than the calculated value.
-		 */
-		double current_value = max_freq_pulse_duration;
+			const double XDS110_TCK_PULSE_INCREMENT = 66.0;
+			freq_to_use = speed * 1000; /* Hz */
+			delay_count = 0;
 
-		while (current_value < freq_to_pulse_width_in_ns) {
-			current_value += XDS110_TCK_PULSE_INCREMENT;
-			++delay_count;
+			/* Calculate the delay count value */
+			double one_giga = 1000000000;
+			/* Get the pulse duration for the max frequency supported in ns */
+			double max_freq_pulse_duration = one_giga /
+				(XDS110_MAX_SLOW_TCK_SPEED * 1000);
+
+			/* Convert frequency to pulse duration */
+			double freq_to_pulse_width_in_ns = one_giga / freq_to_use;
+
+			/*
+			* Start with the pulse duration for the maximum frequency. Keep
+			* decrementing time added by each count value till the requested
+			* frequency pulse is less than the calculated value.
+			*/
+			double current_value = max_freq_pulse_duration;
+
+			while (current_value < freq_to_pulse_width_in_ns) {
+				current_value += XDS110_TCK_PULSE_INCREMENT;
+				++delay_count;
+			}
+
+			/*
+			* Determine which delay count yields the best match.
+			* The one obtained above or one less.
+			*/
+			if (delay_count) {
+				double diff_freq_1 = freq_to_use -
+					(one_giga / (max_freq_pulse_duration +
+					(XDS110_TCK_PULSE_INCREMENT * delay_count)));
+				double diff_freq_2 = (one_giga / (max_freq_pulse_duration +
+					(XDS110_TCK_PULSE_INCREMENT * (delay_count - 1)))) -
+					freq_to_use;
+
+				/* One less count value yields a better match */
+				if (diff_freq_1 > diff_freq_2)
+					--delay_count;
+			}
 		}
 
-		/*
-		 * Determine which delay count yields the best match.
-		 * The one obtained above or one less.
-		 */
-		if (delay_count) {
-			double diff_freq_1 = freq_to_use -
-				(one_giga / (max_freq_pulse_duration +
-				(XDS110_TCK_PULSE_INCREMENT * delay_count)));
-			double diff_freq_2 = (one_giga / (max_freq_pulse_duration +
-				(XDS110_TCK_PULSE_INCREMENT * (delay_count - 1)))) -
-				freq_to_use;
+	/* Newer firmware has reworked TCK routines that are much more efficient */
+	/* and can now achieve a peak TCK frequency of 14000 kHz */
+	} else {
 
-			/* One less count value yields a better match */
-			if (diff_freq_1 > diff_freq_2)
-				--delay_count;
+		if (speed >= XDS110_MAX_FAST_TCK_SPEED) {
+			if (speed > XDS110_MAX_FAST_TCK_SPEED) {
+				LOG_INFO(
+					"XDS110: reduce speed request: %d kHz to %d kHz maximum",
+					speed, XDS110_MAX_FAST_TCK_SPEED);
+				speed = XDS110_MAX_FAST_TCK_SPEED;
+			}
+			delay_count = 0;
+		} else if (speed >= 12000 && xds110.firmware >=
+			FAST_TCK_PLUS_FIRMWARE_VERSION) {
+			delay_count = FAST_TCK_DELAY_12000_KHZ;
+		} else if (speed >= 10000 && xds110.firmware >=
+			FAST_TCK_PLUS_FIRMWARE_VERSION) {
+			delay_count = FAST_TCK_DELAY_10000_KHZ;
+		} else if (speed >= 8500) {
+			delay_count = FAST_TCK_DELAY_8500_KHZ;
+		} else if (speed >= 5500) {
+			delay_count = FAST_TCK_DELAY_5500_KHZ;
+		} else {
+			/* Calculate the delay count to set the frequency */
+			/* Formula determined by measuring the waveform on Saeleae logic */
+			/* analyzer using known values for delay count */
+			const double m = 17100000.0; /* slope */
+			const double b = -1.02;      /* y-intercept */
+
+			freq_to_use = speed * 1000; /* Hz */
+			double period = 1.0/freq_to_use;
+			double delay = m * period + b;
+
+			if (delay < 1.0)
+				delay_count = 1;
+			else
+				delay_count = (uint32_t)delay;
 		}
 	}
 
@@ -1872,13 +2016,6 @@ static int xds110_khz(int khz, int *jtag_speed)
 {
 	*jtag_speed = khz;
 	return ERROR_OK;
-}
-
-static int_least32_t xds110_swd_frequency(int_least32_t hz)
-{
-	if (hz > 0)
-		xds110_speed(hz / 1000);
-	return hz;
 }
 
 COMMAND_HANDLER(xds110_handle_info_command)
@@ -1909,11 +2046,30 @@ COMMAND_HANDLER(xds110_handle_serial_command)
 			xds110.serial[i] = (char)serial[i];
 
 		xds110.serial[len] = 0;
-	} else {
-		LOG_ERROR("XDS110: expected exactly one argument to xds110_serial "
-			"<serial-number>");
-		return ERROR_FAIL;
-	}
+	} else
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	return ERROR_OK;
+}
+
+COMMAND_HANDLER(xds110_handle_supply_voltage_command)
+{
+	uint32_t voltage = 0;
+
+	if (CMD_ARGC == 1) {
+		COMMAND_PARSE_NUMBER(uint, CMD_ARGV[0], voltage);
+		if (voltage == 0 || (voltage >= XDS110_MIN_VOLTAGE && voltage
+			<= XDS110_MAX_VOLTAGE)) {
+			/* Requested voltage is in range */
+			xds110.voltage = voltage;
+		} else {
+			LOG_ERROR("XDS110: voltage must be 0 or between %d and %d "
+				"millivolts", XDS110_MIN_VOLTAGE, XDS110_MAX_VOLTAGE);
+			return ERROR_FAIL;
+		}
+		xds110.voltage = voltage;
+	} else
+		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	return ERROR_OK;
 }
@@ -1923,8 +2079,22 @@ static const struct command_registration xds110_subcommand_handlers[] = {
 		.name = "info",
 		.handler = &xds110_handle_info_command,
 		.mode = COMMAND_EXEC,
-		.usage = "",
 		.help = "show XDS110 info",
+		.usage = "",
+	},
+	{
+		.name = "serial",
+		.handler = &xds110_handle_serial_command,
+		.mode = COMMAND_CONFIG,
+		.help = "set the XDS110 probe serial number",
+		.usage = "serial_string",
+	},
+	{
+		.name = "supply",
+		.handler = &xds110_handle_supply_voltage_command,
+		.mode = COMMAND_CONFIG,
+		.help = "set the XDS110 probe supply voltage",
+		.usage = "voltage_in_millivolts",
 	},
 	COMMAND_REGISTRATION_DONE
 };
@@ -1934,22 +2104,14 @@ static const struct command_registration xds110_command_handlers[] = {
 		.name = "xds110",
 		.mode = COMMAND_ANY,
 		.help = "perform XDS110 management",
-		.usage = "<cmd>",
+		.usage = "",
 		.chain = xds110_subcommand_handlers,
-	},
-	{
-		.name = "xds110_serial",
-		.handler = &xds110_handle_serial_command,
-		.mode = COMMAND_CONFIG,
-		.help = "set the XDS110 probe serial number",
-		.usage = "serial_string",
 	},
 	COMMAND_REGISTRATION_DONE
 };
 
 static const struct swd_driver xds110_swd_driver = {
 	.init = xds110_swd_init,
-	.frequency = xds110_swd_frequency,
 	.switch_seq = xds110_swd_switch_seq,
 	.read_reg = xds110_swd_read_reg,
 	.write_reg = xds110_swd_write_reg,
@@ -1958,16 +2120,22 @@ static const struct swd_driver xds110_swd_driver = {
 
 static const char * const xds110_transport[] = { "swd", "jtag", NULL };
 
-struct jtag_interface xds110_interface = {
-	.name = "xds110",
-	.commands = xds110_command_handlers,
-	.swd = &xds110_swd_driver,
-	.transports = xds110_transport,
-
+static struct jtag_interface xds110_interface = {
 	.execute_queue = xds110_execute_queue,
-	.speed = xds110_speed,
-	.speed_div = xds110_speed_div,
-	.khz = xds110_khz,
+};
+
+struct adapter_driver xds110_adapter_driver = {
+	.name = "xds110",
+	.transports = xds110_transport,
+	.commands = xds110_command_handlers,
+
 	.init = xds110_init,
 	.quit = xds110_quit,
+	.reset = xds110_reset,
+	.speed = xds110_speed,
+	.khz = xds110_khz,
+	.speed_div = xds110_speed_div,
+
+	.jtag_ops = &xds110_interface,
+	.swd_ops = &xds110_swd_driver,
 };

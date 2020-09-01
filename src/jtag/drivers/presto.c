@@ -351,7 +351,7 @@ static int presto_bitq_out(int tms, int tdi, int tdo_req)
 	unsigned char cmd;
 
 	if (presto->jtag_tck == 0)
-		presto_sendbyte(0xA4);	/* LED idicator - JTAG active */
+		presto_sendbyte(0xA4);	/* LED indicator - JTAG active */
 	else if (presto->jtag_speed == 0 && !tdo_req && tms == presto->jtag_tms) {
 		presto->jtag_tdi_data |= (tdi != 0) << presto->jtag_tdi_count;
 
@@ -392,7 +392,7 @@ static int presto_bitq_flush(void)
 	presto_tdi_flush();
 	presto_tck_idle();
 
-	presto_sendbyte(0xA0);	/* LED idicator - JTAG idle */
+	presto_sendbyte(0xA0);	/* LED indicator - JTAG idle */
 
 	return presto_flush();
 }
@@ -561,14 +561,20 @@ static int presto_jtag_quit(void)
 	return ERROR_OK;
 }
 
-struct jtag_interface presto_interface = {
+static struct jtag_interface presto_interface = {
+	.execute_queue = bitq_execute_queue,
+};
+
+struct adapter_driver presto_adapter_driver = {
 	.name = "presto",
+	.transports = jtag_only,
 	.commands = presto_command_handlers,
 
-	.execute_queue = bitq_execute_queue,
+	.init = presto_jtag_init,
+	.quit = presto_jtag_quit,
 	.speed = presto_jtag_speed,
 	.khz = presto_adapter_khz,
 	.speed_div = presto_jtag_speed_div,
-	.init = presto_jtag_init,
-	.quit = presto_jtag_quit,
+
+	.jtag_ops = &presto_interface,
 };
