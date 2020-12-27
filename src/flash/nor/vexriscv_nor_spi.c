@@ -263,10 +263,10 @@ FLASH_BANK_COMMAND_HANDLER(vexriscv_nor_spi_flash_bank_command)
 }
 
 
-int  vexriscv_nor_spi_erase(struct flash_bank *bank, int first, int last){
+int  vexriscv_nor_spi_erase(struct flash_bank *bank, unsigned int first, unsigned int last){
 	LOG_DEBUG("vexriscv_nor_spi_erase %d %d", first, last);
 	vexriscv_nor_spi_init(bank);
-	for(int sector = first;sector <= last;sector++){
+	for(unsigned int sector = first;sector <= last;sector++){
 		uint32_t addr = sector << 16;
 		vexriscv_nor_spi_spiWriteEnable(bank);
 		vexriscv_nor_spi_spiStart(bank);
@@ -285,7 +285,7 @@ int  vexriscv_nor_spi_erase(struct flash_bank *bank, int first, int last){
 
 int vexriscv_protect(struct flash_bank *bank, int set, unsigned int first, unsigned int last){
 	vexriscv_nor_spi_init(bank);
-	for(int sector = first;sector <= last;sector++){
+	for(unsigned int sector = first;sector <= last;sector++){
 		vexriscv_nor_spi_spiWriteLock(bank, bank->sectors[sector].offset, set ? 1 : 0);
 	}
 	return ERROR_OK;
