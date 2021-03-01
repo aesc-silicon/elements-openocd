@@ -1078,7 +1078,7 @@ static int vexriscv_network_write(struct vexriscv_common *vexriscv, int is_read,
 		buffer[1] = size;
 		buf_set_u32(buffer + 2, 0, 32, address);
 		buf_set_u32(buffer + 6, 0, 32, data);
-		return send(vexriscv->clientSocket, buffer, 10, 0);
+		return send(vexriscv->clientSocket, (char*)buffer, 10, 0);
 	}
 	else if (vexriscv->networkProtocol == NP_ETHERBONE)
 	{
@@ -1294,7 +1294,7 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 
 	if(size == 4 && count > 4){
 		//use 4 address registers over a range of 16K in order to reduce JTAG usage
-		int maxAddressReg = 4;
+		uint32_t maxAddressReg = 4;
 		uint32_t numAddressReg = MIN(maxAddressReg, (count * size - 1) / 4096 + 1);
 		if(count * size > 4096*numAddressReg){
 			if(vexriscv_write_memory(target,address,size,numAddressReg*4096/size,buffer)) return ERROR_FAIL;
