@@ -1767,7 +1767,25 @@ static int vexriscv_examine(struct target *target)
 			if (!halted)
 				target->state = TARGET_RUNNING;
 			else {
+				uint32_t buffer;
 				LOG_DEBUG("Target is halted");
+
+				vexriscv_pushInstruction(target, false, 0x12300013); //addi x0 x0, 0x123
+				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer);
+				if(vexriscv_execute_jtag_queue(target))
+					return ERROR_FAIL;
+				if(buffer != 0x123){
+					LOG_ERROR("Can't communicate with the CPU\n");
+					return ERROR_FAIL;
+				}
+				vexriscv_pushInstruction(target, false, 0x45600013); //addi x0 x0, 0x456
+				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer);
+				if(vexriscv_execute_jtag_queue(target))
+					return ERROR_FAIL;
+				if(buffer != 0x456){
+					LOG_ERROR("Can't communicate with the CPU\n");
+					return ERROR_FAIL;
+				}
 
 				/* This is the first time we examine the target,
 				 * it is stalled and we don't know why. Let's
