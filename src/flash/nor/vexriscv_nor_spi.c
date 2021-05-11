@@ -221,6 +221,12 @@ static int vexriscv_nor_spi_probe(struct flash_bank *bank)
 	if(!priv->probed){
 		vexriscv_nor_spi_init(bank);
 
+        vexriscv_nor_spi_spiStart(bank);
+        vexriscv_nor_spi_spiWrite(bank, 0xAB);
+        vexriscv_nor_spi_spiStop(bank);
+
+        sleep(1);
+
 		vexriscv_nor_spi_spiStart(bank);
 		vexriscv_nor_spi_spiWrite(bank, 0x9F);
 		uint8_t a = vexriscv_nor_spi_spiRead(bank);
