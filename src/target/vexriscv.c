@@ -1767,25 +1767,27 @@ static int vexriscv_examine(struct target *target)
 			if (!halted)
 				target->state = TARGET_RUNNING;
 			else {
-				uint32_t buffer;
+				uint32_t buffer[4];
 				LOG_DEBUG("Target is halted");
 
 				vexriscv_pushInstruction(target, false, 0x12300013); //addi x0 x0, 0x123
-				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer);
-				if(vexriscv_execute_jtag_queue(target))
-					return ERROR_FAIL;
-				if(buffer != 0x123){
-					LOG_ERROR("Can't communicate with the CPU\n");
-					return ERROR_FAIL;
-				}
+				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[0]);
 				vexriscv_pushInstruction(target, false, 0x45600013); //addi x0 x0, 0x456
-				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer);
-				if(vexriscv_execute_jtag_queue(target))
-					return ERROR_FAIL;
-				if(buffer != 0x456){
-					LOG_ERROR("Can't communicate with the CPU\n");
-					return ERROR_FAIL;
-				}
+				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[1]);
+                vexriscv_pushInstruction(target, false, 0xFFFFF037); //lui x0, 0xFFFFF
+                vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[2]);
+                vexriscv_pushInstruction(target, false, 0xABCDE037); //lui x0, 0xABCDE
+                vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[3]);
+
+                if(vexriscv_execute_jtag_queue(target))
+                    return ERROR_FAIL;
+                if(buffer[0] != 0x123 || buffer[1] != 0x456 || buffer[2] != 0xFFFFF000 || buffer[3] != 0xABCDE000){
+                    LOG_ERROR("!!!");
+                    LOG_ERROR("Can't communicate with the CPU");
+                    LOG_ERROR("!!!");
+                    return ERROR_FAIL;
+                }
+
 
 				/* This is the first time we examine the target,
 				 * it is stalled and we don't know why. Let's
