@@ -64,6 +64,7 @@ endif
 if PARPORT
 DRIVERFILES += %D%/parport.c
 endif
+DRIVERFILES += %D%/jtag_tcp.c
 if DUMMY
 DRIVERFILES += %D%/dummy.c
 endif
