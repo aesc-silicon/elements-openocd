@@ -1,5 +1,5 @@
 #ifndef __VEXRISCV_CSR_H__
-#define __VEXROSCV_CSR_H__
+#define __VEXRISCV_CSR_H__
 
 struct vexriscv_core_reg_init {
     const char *name;

@@ -1078,7 +1078,7 @@ static int vexriscv_network_write(struct vexriscv_common *vexriscv, int is_read,
 		buffer[1] = size;
 		buf_set_u32(buffer + 2, 0, 32, address);
 		buf_set_u32(buffer + 6, 0, 32, data);
-		return send(vexriscv->clientSocket, buffer, 10, 0);
+		return send(vexriscv->clientSocket, (char*)buffer, 10, 0);
 	}
 	else if (vexriscv->networkProtocol == NP_ETHERBONE)
 	{
@@ -1294,7 +1294,7 @@ static int vexriscv_write_memory(struct target *target, target_addr_t address,
 
 	if(size == 4 && count > 4){
 		//use 4 address registers over a range of 16K in order to reduce JTAG usage
-		int maxAddressReg = 4;
+		uint32_t maxAddressReg = 4;
 		uint32_t numAddressReg = MIN(maxAddressReg, (count * size - 1) / 4096 + 1);
 		if(count * size > 4096*numAddressReg){
 			if(vexriscv_write_memory(target,address,size,numAddressReg*4096/size,buffer)) return ERROR_FAIL;
@@ -1767,7 +1767,27 @@ static int vexriscv_examine(struct target *target)
 			if (!halted)
 				target->state = TARGET_RUNNING;
 			else {
+				uint32_t buffer[4];
 				LOG_DEBUG("Target is halted");
+
+				vexriscv_pushInstruction(target, false, 0x12300013); //addi x0 x0, 0x123
+				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[0]);
+				vexriscv_pushInstruction(target, false, 0x45600013); //addi x0 x0, 0x456
+				vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[1]);
+                vexriscv_pushInstruction(target, false, 0xFFFFF037); //lui x0, 0xFFFFF
+                vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[2]);
+                vexriscv_pushInstruction(target, false, 0xABCDE037); //lui x0, 0xABCDE
+                vexriscv_readInstructionResult32(target, true, (uint8_t*) &buffer[3]);
+
+                if(vexriscv_execute_jtag_queue(target))
+                    return ERROR_FAIL;
+                if(buffer[0] != 0x123 || buffer[1] != 0x456 || buffer[2] != 0xFFFFF000 || buffer[3] != 0xABCDE000){
+                    LOG_ERROR("!!!");
+                    LOG_ERROR("Can't communicate with the CPU");
+                    LOG_ERROR("!!!");
+                    return ERROR_FAIL;
+                }
+
 
 				/* This is the first time we examine the target,
 				 * it is stalled and we don't know why. Let's

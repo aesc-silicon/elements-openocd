@@ -134,7 +134,7 @@ static int jtag_tcp_reset(void)
 		buffer[i + 1] = TMS_SET | TCK_SET;
 	}
 
-	if(send(clientSocket,buffer,10,0) <= 0)
+	if(send(clientSocket,(char*)buffer,10,0) <= 0)
 		return ERROR_FAIL;
 
 	tap_set_state(TAP_RESET);
@@ -154,7 +154,7 @@ static int jtag_tcp_state_move(int skip)
 	}
 	buffer[tms_count*2] = tms ? TMS_SET : 0;
 
-	if(send(clientSocket,&buffer[skip*2],(tms_count - skip)*2 + 1, 0) <= 0)
+	if(send(clientSocket,(char*)&buffer[skip*2],(tms_count - skip)*2 + 1, 0) <= 0)
 		return ERROR_FAIL;
 
 	tap_set_state(tap_get_end_state());
@@ -206,7 +206,7 @@ static int jtag_tcp_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int
 		txBuffer[bit_cnt*2 + 1] = (tms ? TMS_SET : 0) | (tdi ? TDI_SET : 0) | TCK_SET | (type != SCAN_OUT ? TDO_READ : 0);
 	}
 
-	if(send(clientSocket,txBuffer,scan_size*2, 0) <= 0)
+	if(send(clientSocket,(char*)txBuffer,scan_size*2, 0) <= 0)
 		return ERROR_FAIL;
 
 
@@ -254,7 +254,7 @@ static int jtag_tcp_stableclocks(int num_cycles)
 		txBuffer[i*2 + 1] = (tms ? TMS_SET : 0) | TCK_SET;
 	}
 
-	if(send(clientSocket,txBuffer,num_cycles*2, 0) <= 0)
+	if(send(clientSocket,(char*)txBuffer,num_cycles*2, 0) <= 0)
 		return ERROR_FAIL;
 
 	return ERROR_OK;
@@ -279,7 +279,7 @@ static int jtag_tcp_runtest(int num_cycles)
 	}
 
 	/* Send the cycles */
-	if(send(clientSocket,txBuffer,num_cycles*2, 0) <= 0)
+	if(send(clientSocket,(char*)txBuffer,num_cycles*2, 0) <= 0)
 		return ERROR_FAIL;
   
 	return ERROR_OK;
@@ -339,7 +339,7 @@ int jtag_tcp_execute_queue(void)
 
 	{
 		uint8_t txBuffer = TDO_READ;
-		if(send(clientSocket,&txBuffer,1, 0) <= 0)
+		if(send(clientSocket,(char*)&txBuffer,1, 0) <= 0)
 			return ERROR_FAIL;
 	}
 
@@ -374,10 +374,15 @@ int jtag_tcp_execute_queue(void)
 }
 
 
+int jtag_tcp_streset(int srst, int trst){
+	return ERROR_OK;
+}
+
 
 static const struct command_registration jtag_tcp_command_handlers[] = {
 	{
 		.name = "jtag_tcp",
+		.usage = "",
 		.mode = COMMAND_ANY,
 		.help = "jtag_tcp interface driver commands",
 		.chain = hello_command_handlers,
@@ -398,6 +403,8 @@ struct adapter_driver jtag_tcp_adapter_driver = {
 
 		.commands = jtag_tcp_command_handlers,
 		.transports = jtag_only,
+		
+		.reset = jtag_tcp_streset,
 
 		.speed = &jtag_tcp_speed,
 		.khz = &jtag_tcp_khz,
