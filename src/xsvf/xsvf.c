@@ -39,6 +39,7 @@
 #endif
 
 #include "xsvf.h"
+#include "helper/system.h"
 #include <jtag/jtag.h>
 #include <svf/svf.h>
 
@@ -411,12 +412,9 @@ COMMAND_HANDLER(handle_xsvf_command)
 				xsdrsize = be_to_h_u32(xsdrsize_buf);
 				LOG_DEBUG("XSDRSIZE %d", xsdrsize);
 
-				if (dr_out_buf)
-					free(dr_out_buf);
-				if (dr_in_buf)
-					free(dr_in_buf);
-				if (dr_in_mask)
-					free(dr_in_mask);
+				free(dr_out_buf);
+				free(dr_in_buf);
+				free(dr_in_mask);
 
 				dr_out_buf = malloc((xsdrsize + 7) / 8);
 				dr_in_buf = malloc((xsdrsize + 7) / 8);
@@ -489,7 +487,7 @@ COMMAND_HANDLER(handle_xsvf_command)
 					field.out_value = dr_out_buf;
 					field.in_value = calloc(DIV_ROUND_UP(field.num_bits, 8), 1);
 
-					if (tap == NULL)
+					if (!tap)
 						jtag_add_plain_dr_scan(field.num_bits,
 								field.out_value,
 								field.in_value,
@@ -698,7 +696,7 @@ COMMAND_HANDLER(handle_xsvf_command)
 
 					field.in_value = NULL;
 
-					if (tap == NULL)
+					if (!tap)
 						jtag_add_plain_ir_scan(field.num_bits,
 								field.out_value, field.in_value, my_end_state);
 					else
@@ -932,7 +930,7 @@ COMMAND_HANDLER(handle_xsvf_command)
 					if (attempt > 0 && verbose)
 						LOG_USER("LSDR retry %d", attempt);
 
-					if (tap == NULL)
+					if (!tap)
 						jtag_add_plain_dr_scan(field.num_bits,
 								field.out_value,
 								field.in_value,
@@ -1027,14 +1025,9 @@ COMMAND_HANDLER(handle_xsvf_command)
 		return ERROR_FAIL;
 	}
 
-	if (dr_out_buf)
-		free(dr_out_buf);
-
-	if (dr_in_buf)
-		free(dr_in_buf);
-
-	if (dr_in_mask)
-		free(dr_in_mask);
+	free(dr_out_buf);
+	free(dr_in_buf);
+	free(dr_in_mask);
 
 	close(xsvf_fd);
 
@@ -1064,7 +1057,7 @@ int xsvf_register_commands(struct command_context *cmd_ctx)
 
 /*
 
-PSUEDO-Code from Xilinx Appnote XAPP067.pdf :
+PSEUDO-Code from Xilinx Appnote XAPP067.pdf :
 
 the following pseudo code clarifies the intent of the xrepeat support.The
 flow given is for the entire processing of an SVF file, not an XSVF file.
