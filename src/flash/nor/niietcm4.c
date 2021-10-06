@@ -411,7 +411,7 @@ COMMAND_HANDLER(niietcm4_handle_uflash_read_byte_command)
 	else
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], uflash_addr);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], uflash_addr);
 
 	retval = target_write_u32(target, UFMA, uflash_addr);
 	if (retval != ERROR_OK)
@@ -427,8 +427,8 @@ COMMAND_HANDLER(niietcm4_handle_uflash_read_byte_command)
 	if (retval != ERROR_OK)
 		return retval;
 	command_print(CMD,  "Read userflash %s region:\n"
-						"address = 0x%04x,\n"
-						"value   = 0x%02x.", CMD_ARGV[0], uflash_addr, uflash_data);
+						"address = 0x%04" PRIx32 ",\n"
+						"value   = 0x%02" PRIx32 ".", CMD_ARGV[0], uflash_addr, uflash_data);
 	return retval;
 }
 
@@ -463,14 +463,14 @@ COMMAND_HANDLER(niietcm4_handle_uflash_write_byte_command)
 	else
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], uflash_addr);
-	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[2], uflash_data);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], uflash_addr);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], uflash_data);
 
 	int page_num = uflash_addr/USERFLASH_PAGE_SIZE;
 
 	command_print(CMD, "Write userflash %s region:\n"
-					   "address = 0x%04x,\n"
-					   "value   = 0x%02x.\n"
+					   "address = 0x%04" PRIx32 ",\n"
+					   "value   = 0x%02" PRIx32 ".\n"
 					   "Please wait ... ", CMD_ARGV[0], uflash_addr, uflash_data);
 	/* dump */
 	uint32_t uflash_dump[USERFLASH_PAGE_SIZE];
@@ -803,7 +803,7 @@ COMMAND_HANDLER(niietcm4_handle_extmem_cfg_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	uint32_t pin;
-	COMMAND_PARSE_NUMBER(uint, CMD_ARGV[1], pin);
+	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], pin);
 	if (pin > 15)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
@@ -1206,8 +1206,6 @@ static int niietcm4_erase(struct flash_bank *bank, unsigned int first,
 		retval = niietcm4_opstatus_check(bank);
 		if (retval != ERROR_OK)
 			return retval;
-
-		bank->sectors[i].is_erased = 1;
 	}
 
 	return retval;
@@ -1394,7 +1392,7 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 	int rem = count % 16;
 	if (rem) {
 		new_buffer = malloc(count + 16 - rem);
-		if (new_buffer == NULL) {
+		if (!new_buffer) {
 			LOG_ERROR("Odd number of words to write and no memory for padding buffer");
 			return ERROR_FAIL;
 		}
@@ -1427,7 +1425,7 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 		/* write 16 bytes per try */
 		for (unsigned int i = 0; i < count; i += 16) {
 			/* current addr */
-			LOG_INFO("%d byte of %d", i, count);
+			LOG_INFO("%u byte of %" PRIu32, i, count);
 			flash_addr = offset + i;
 			retval = target_write_u32(target, FMA, flash_addr);
 			if (retval != ERROR_OK)
@@ -1469,9 +1467,7 @@ static int niietcm4_write(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 free_buffer:
-	if (new_buffer)
-		free(new_buffer);
-
+	free(new_buffer);
 	return retval;
 }
 
@@ -1598,31 +1594,31 @@ static int niietcm4_probe_k1921vk01t(struct flash_bank *bank)
 				"\n"
 				"MEMORY CONFIGURATION\n"
 				"Bootflash :\n"
-				"    %d kB total\n"
-				"    %d pages %d kB each\n"
-				"    0x%08x base address\n"
+				"    %" PRIu32 " kB total\n"
+				"    %" PRIu32 " pages %" PRIu32 " kB each\n"
+				"    0x%08" PRIx32 " base address\n"
 				"%s"
 				"Info bootflash :\n"
-				"    %d kB total\n"
-				"    %d pages %d kB each\n"
+				"    %" PRIu32 " kB total\n"
+				"    %" PRIu32 " pages %" PRIu32 " kB each\n"
 				"    %s\n"
 				"%s"
 				"Userflash :\n"
-				"    %d kB total\n"
-				"    %d pages %d B each\n"
-				"    %d bit cells\n"
+				"    %" PRIu32 " kB total\n"
+				"    %" PRIu32 " pages %" PRIu32 " B each\n"
+				"    %" PRIu32 " bit cells\n"
 				"    not mapped to global address space\n"
 				"Info userflash :\n"
-				"    %d B total\n"
-				"    %d pages of %d B each\n"
-				"    %d bit cells\n"
+				"    %" PRIu32 " B total\n"
+				"    %" PRIu32 " pages of %" PRIu32 " B each\n"
+				"    %" PRIu32 " bit cells\n"
 				"    not mapped to global address space\n"
 				"RAM :\n"
 				"    192 kB total\n"
 				"    0x20000000 base address\n"
 				"External memory :\n"
 				"    8/16 bit address space\n"
-				"    0x%08x base address\n"
+				"    0x%08" PRIx32 " base address\n"
 				"\n"
 				"INFOWORD STATUS\n"
 				"Bootflash info region remap :\n"
@@ -1630,9 +1626,9 @@ static int niietcm4_probe_k1921vk01t(struct flash_bank *bank)
 				"External memory boot port :\n"
 				"    %s\n"
 				"External memory boot pin :\n"
-				"    %d\n"
+				"    %" PRIu32 "\n"
 				"External memory interface alternative function :\n"
-				"    %d\n"
+				"    %" PRIu32 "\n"
 				"Option boot from external memory :\n"
 				"    %s\n",
 				bflash_size/1024,
@@ -1681,10 +1677,9 @@ static int niietcm4_probe(struct flash_bank *bank)
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
 	struct target *target = bank->target;
 
-	if (bank->sectors) {
-		free(bank->sectors);
-		bank->sectors = NULL;
-	}
+	free(bank->sectors);
+	bank->sectors = NULL;
+
 	uint32_t retval;
 	uint32_t chipid;
 
@@ -1722,12 +1717,11 @@ static int niietcm4_auto_probe(struct flash_bank *bank)
 	return niietcm4_probe(bank);
 }
 
-static int get_niietcm4_info(struct flash_bank *bank, char *buf, int buf_size)
+static int get_niietcm4_info(struct flash_bank *bank, struct command_invocation *cmd)
 {
 	struct niietcm4_flash_bank *niietcm4_info = bank->driver_priv;
-	LOG_INFO("\nNIIET Cortex-M4F %s\n%s", niietcm4_info->chip_name, niietcm4_info->chip_brief);
-	snprintf(buf, buf_size, " ");
-
+	command_print_sameline(cmd, "\nNIIET Cortex-M4F %s\n%s",
+			niietcm4_info->chip_name, niietcm4_info->chip_brief);
 	return ERROR_OK;
 }
 

@@ -220,6 +220,7 @@ static int vexriscv_target_create(struct target *target, Jim_Interp *interp)
     vexriscv->jtagRspHeaderSize = 0;
 
 
+    vexriscv->useTCP = 0;
 	vexriscv->targetAddress = "127.0.0.1";
 	vexriscv->networkProtocol = NP_IVERILOG;
 	vexriscv_create_reg_list(target);
@@ -574,14 +575,6 @@ static int vexriscv_init_target(struct command_context *cmd_ctx, struct target *
 
 	vexriscv_build_reg_cache(target);
 
-	vexriscv->useTCP = 0;
-	struct command *command = cmd_ctx->commands;
-	while(command != NULL){
-		if(strcmp(command->name,"dummy") == 0){
-			vexriscv->useTCP = 1;
-		}
-		command = command->next;
-	}
 	if(vexriscv->useTCP){
 		struct sockaddr_in serverAddr;
 		//---- Create the socket. The three arguments are: ----//
@@ -2002,6 +1995,7 @@ COMMAND_HANDLER(vexriscv_handle_networkProtocol_command)
 		return ERROR_COMMAND_ARGUMENT_INVALID;
 	struct target *target = get_current_target(CMD_CTX);
 	struct vexriscv_common *vexriscv = target_to_vexriscv(target);
+	vexriscv->useTCP = 1;
 	if (!strcasecmp(CMD_ARGV[0], "iverilog")) {
 		vexriscv->networkProtocol = NP_IVERILOG;
 	} else if (!strcasecmp(CMD_ARGV[0], "etherbone")) {

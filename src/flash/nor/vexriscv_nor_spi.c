@@ -43,7 +43,7 @@ typedef struct  {
 } vexriscv_nor_spi_priv;
 
 
-static int get_vexriscv_nor_spi_info(struct flash_bank *bank, char *buf, int buf_size)
+static int get_vexriscv_nor_spi_info(struct flash_bank *bank, struct command_invocation *cmd)
 {
 
 	return ERROR_OK;
