@@ -287,7 +287,7 @@ static int vexriscv_get_core_reg(struct reg *reg)
 			vexriscv_readInstructionResult32(target, false, reg->value);
 		}
 		else {
-			*((uint32_t*)reg->value) = 0xDEADBEEF;
+			buf_set_u32(reg->value, 0, 32, 0xDEADBEEF);
 		}
 
 		reg->valid = true;
@@ -327,7 +327,7 @@ static int vexriscv_set_core_reg(struct reg *reg, uint8_t *buf)
 		// d: rd (destination register)
 		// o: opcode - 0x73
 
-		vexriscv_write_regfile(target, false, 1, *(uint32_t *)reg->value);
+		vexriscv_write_regfile(target, false, 1, buf_get_u32((uint8_t *)reg->value, 0, 32));
 		vexriscv_pushInstruction(target, false, 0
 			| ((vexriscv_reg->csr_num & 0x1fff) << 20)
 			| (1 << 15)	// rs1: x1
@@ -733,7 +733,7 @@ static int vexriscv_restore_context(struct target *target)
 
 	//PC
 	if(vexriscv->regs->pc.valid){
-		vexriscv_cpu_write_pc(target, false, *((uint32_t*)vexriscv->regs->pc.value));
+		vexriscv_cpu_write_pc(target, false, buf_get_u32((uint8_t *)vexriscv->regs->pc.value, 0, 32));
 		vexriscv->regs->pc.valid = false;
 		vexriscv->regs->pc.dirty = false;
 	}
@@ -741,7 +741,7 @@ static int vexriscv_restore_context(struct target *target)
 	for(uint32_t i = 0;i < 32;i++){
 		struct reg *reg = vexriscv->core_cache->reg_list + i;
 		if(reg->valid && reg->dirty){
-			vexriscv_write_regfile(target, false, i,*((uint32_t*)reg->value));
+			vexriscv_write_regfile(target, false, i, buf_get_u32((uint8_t *)reg->value, 0, 32));
 			reg->valid = false;
 			reg->dirty = false;
 		}
@@ -828,7 +828,7 @@ int vexriscv_semihosting(struct target *target, int *retval)
     uint32_t pc = 0xdeadbeef;
     
     vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[32]);
-    pc = *((uint32_t*) vexriscv->core_cache->reg_list[32].value);
+    pc = buf_get_u32((uint8_t *)vexriscv->core_cache->reg_list[32].value, 0, 32);
 
     
     LOG_DEBUG("semihosting pc: %08x", pc);
@@ -873,10 +873,10 @@ int vexriscv_semihosting(struct target *target, int *retval)
         uint32_t r1;
         
         vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[10]);
-        r0 = *((uint32_t*) vexriscv->core_cache->reg_list[10].value);
+        r0 = buf_get_u32((uint8_t *)vexriscv->core_cache->reg_list[10].value, 0, 32);
         
         vexriscv_get_core_reg(&vexriscv->core_cache->reg_list[11]);
-        r1 = *((uint32_t*) vexriscv->core_cache->reg_list[11].value);
+        r1 = buf_get_u32((uint8_t *)vexriscv->core_cache->reg_list[11].value, 0, 32);
         
         LOG_DEBUG("semihosting  r0: %08x", r0);
         LOG_DEBUG("semihosting  r1: %08x", r1);
@@ -1661,7 +1661,7 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 
 	/* current ? continue on current pc : continue at <address> */
 	if (!current){
-		*((uint32_t*)vexriscv->regs->pc.value) = address;
+                buf_set_u32(vexriscv->regs->pc.value, 0, 32, address);
 		vexriscv->regs->pc.valid = true;
 		vexriscv->regs->pc.dirty = true;
 	}
@@ -1671,7 +1671,7 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 	/* The front-end may request us not to handle breakpoints */
 	if (handle_breakpoints) {
 		/* Single step past breakpoint at current address */
-		breakpoint = breakpoint_find(target, *((uint32_t*)vexriscv->regs->pc.value));
+		breakpoint = breakpoint_find(target, buf_get_u32((uint8_t *)vexriscv->regs->pc.value, 0, 32));
 		if (breakpoint) {
 			LOG_DEBUG("Unset breakpoint at 0x%08" PRIx32, (uint32_t) breakpoint->address);
 			retval = vexriscv_remove_breakpoint(target, breakpoint);
@@ -1706,11 +1706,11 @@ static int vexriscv_resume_or_step(struct target *target, int current,
 	if (!debug_execution) {
 		target->state = TARGET_RUNNING;
 		target_call_event_callbacks(target, TARGET_EVENT_RESUMED);
-		LOG_DEBUG("Target resumed at 0x%08" PRIx32, *((uint32_t*)vexriscv->regs->pc.value));
+		LOG_DEBUG("Target resumed at 0x%08" PRIx32, buf_get_u32((uint8_t*)vexriscv->regs->pc.value, 0, 32));
 	} else {
 		target->state = TARGET_DEBUG_RUNNING;
 		target_call_event_callbacks(target, TARGET_EVENT_DEBUG_RESUMED);
-		LOG_DEBUG("Target debug resumed at 0x%08" PRIx32, *((uint32_t*)vexriscv->regs->pc.value));
+		LOG_DEBUG("Target debug resumed at 0x%08" PRIx32, buf_get_u32((uint8_t *)vexriscv->regs->pc.value, 0, 32));
 	}
 
 	return ERROR_OK;
