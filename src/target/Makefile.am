@@ -265,7 +265,7 @@ ARC_SRC = \
 	%D%/arc_cmd.h \
 	%D%/arc_jtag.h \
 	%D%/arc_mem.h \
-	%D%/rtt.h
+	%D%/rtt.h \
 	%D%/vexriscv.h
 
 include %D%/openrisc/Makefile.am
