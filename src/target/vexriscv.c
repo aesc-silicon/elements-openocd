@@ -1745,10 +1745,6 @@ static int vexriscv_examine(struct target *target)
 	if (!target_was_examined(target)) {
 
 		target_set_examined(target);
-		//Soft reset
-		vexriscv_assert_reset(target);
-		vexriscv_deassert_reset(target);
-
 
 		uint32_t halted;
 		int retval = vexriscv_is_halted(target,&halted);
