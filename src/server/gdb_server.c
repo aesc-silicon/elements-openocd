@@ -227,6 +227,7 @@ static int gdb_get_char_inner(struct connection *connection, int *next_char)
 		if (gdb_con->buf_cnt > 0)
 			break;
 		if (gdb_con->buf_cnt == 0) {
+			LOG_DEBUG("GDB connection closed by the remote client");
 			gdb_con->closed = true;
 			return ERROR_SERVER_REMOTE_CLOSED;
 		}
@@ -348,11 +349,15 @@ static int gdb_putback_char(struct connection *connection, int last_char)
 static int gdb_write(struct connection *connection, void *data, int len)
 {
 	struct gdb_connection *gdb_con = connection->priv;
-	if (gdb_con->closed)
+	if (gdb_con->closed) {
+		LOG_DEBUG("GDB socket marked as closed, cannot write to it.");
 		return ERROR_SERVER_REMOTE_CLOSED;
+	}
 
 	if (connection_write(connection, data, len) == len)
 		return ERROR_OK;
+
+	LOG_WARNING("Error writing to GDB socket. Dropping the connection.");
 	gdb_con->closed = true;
 	return ERROR_SERVER_REMOTE_CLOSED;
 }
@@ -1001,16 +1006,19 @@ static int gdb_new_connection(struct connection *connection)
 	breakpoint_clear_target(target);
 	watchpoint_clear_target(target);
 
-	/* remove the initial ACK from the incoming buffer */
+	/* Since version 3.95 (gdb-19990504), with the exclusion of 6.5~6.8, GDB
+	 * sends an ACK at connection with the following comment in its source code:
+	 * "Ack any packet which the remote side has already sent."
+	 * LLDB does the same since the first gdb-remote implementation.
+	 * Remove the initial ACK from the incoming buffer.
+	 */
 	retval = gdb_get_char(connection, &initial_ack);
 	if (retval != ERROR_OK)
 		return retval;
 
-	/* FIX!!!??? would we actually ever receive a + here???
-	 * Not observed.
-	 */
 	if (initial_ack != '+')
 		gdb_putback_char(connection, initial_ack);
+
 	target_call_event_callbacks(target, TARGET_EVENT_GDB_ATTACH);
 
 	if (target->rtos) {
@@ -1351,7 +1359,7 @@ static int gdb_get_register_packet(struct connection *connection,
 		return gdb_error(connection, retval);
 
 	if (reg_list_size <= reg_num) {
-		LOG_ERROR("gdb requested a non-existing register");
+		LOG_ERROR("gdb requested a non-existing register (reg_num=%d)", reg_num);
 		return ERROR_SERVER_REMOTE_CLOSED;
 	}
 
@@ -1413,7 +1421,7 @@ static int gdb_set_register_packet(struct connection *connection,
 	}
 
 	if (reg_list_size <= reg_num) {
-		LOG_ERROR("gdb requested a non-existing register");
+		LOG_ERROR("gdb requested a non-existing register (reg_num=%d)", reg_num);
 		free(bin_buf);
 		free(reg_list);
 		return ERROR_SERVER_REMOTE_CLOSED;
@@ -3006,8 +3014,10 @@ static bool gdb_handle_vrun_packet(struct connection *connection, const char *pa
 	free(next_hex_encoded_field(&parse, ';'));
 
 	char *cmdline = next_hex_encoded_field(&parse, ';');
-	char *arg;
-	while (cmdline && (arg = next_hex_encoded_field(&parse, ';')) != NULL) {
+	while (cmdline) {
+		char *arg = next_hex_encoded_field(&parse, ';');
+		if (!arg)
+			break;
 		char *new_cmdline = alloc_printf("%s %s", cmdline, arg);
 		free(cmdline);
 		free(arg);
@@ -3549,7 +3559,7 @@ static int gdb_target_start(struct target *target, const char *port)
 		struct target_list *head;
 		struct target *curr;
 		head = target->head;
-		while (head != (struct target_list *)NULL) {
+		while (head) {
 			curr = head->target;
 			if (curr != target)
 				curr->gdb_service = gdb_service;
