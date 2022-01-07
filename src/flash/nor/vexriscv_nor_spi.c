@@ -34,7 +34,7 @@
 #include <helper/binarybuffer.h>
 #include <target/algorithm.h>
 #include <target/target.h>
-#include "command.h"
+#include <helper/command.h>
 #include <math.h>
 
 typedef struct  {
