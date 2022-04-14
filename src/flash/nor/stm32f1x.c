@@ -131,7 +131,7 @@ struct stm32x_flash_bank {
 static int stm32x_mass_erase(struct flash_bank *bank);
 static int stm32x_get_device_id(struct flash_bank *bank, uint32_t *device_id);
 static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
-		uint32_t address, uint32_t count);
+		uint32_t address, uint32_t hwords_count);
 
 /* flash bank stm32x <base> <size> 0 0 <target#>
  */
@@ -150,6 +150,9 @@ FLASH_BANK_COMMAND_HANDLER(stm32x_flash_bank_command)
 	stm32x_info->can_load_options = false;
 	stm32x_info->register_base = FLASH_REG_BASE_B0;
 	stm32x_info->user_bank_size = bank->size;
+
+	/* The flash write must be aligned to a halfword boundary */
+	bank->write_start_alignment = bank->write_end_alignment = 2;
 
 	return ERROR_OK;
 }
@@ -182,19 +185,19 @@ static int stm32x_wait_status_busy(struct flash_bank *bank, int timeout)
 			break;
 		if (timeout-- <= 0) {
 			LOG_ERROR("timed out waiting for flash");
-			return ERROR_FAIL;
+			return ERROR_FLASH_BUSY;
 		}
 		alive_sleep(1);
 	}
 
 	if (status & FLASH_WRPRTERR) {
 		LOG_ERROR("stm32x device protected");
-		retval = ERROR_FAIL;
+		retval = ERROR_FLASH_PROTECTED;
 	}
 
 	if (status & FLASH_PGERR) {
-		LOG_ERROR("stm32x device programming failed");
-		retval = ERROR_FAIL;
+		LOG_ERROR("stm32x device programming failed / flash not erased");
+		retval = ERROR_FLASH_OPERATION_FAILED;
 	}
 
 	/* Clear but report errors */
@@ -258,36 +261,39 @@ static int stm32x_erase_options(struct flash_bank *bank)
 	int retval = target_write_u32(target, STM32_FLASH_KEYR_B0, KEY1);
 	if (retval != ERROR_OK)
 		return retval;
-
 	retval = target_write_u32(target, STM32_FLASH_KEYR_B0, KEY2);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	/* unlock option flash registers */
 	retval = target_write_u32(target, STM32_FLASH_OPTKEYR_B0, KEY1);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 	retval = target_write_u32(target, STM32_FLASH_OPTKEYR_B0, KEY2);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	/* erase option bytes */
 	retval = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_OPTER | FLASH_OPTWRE);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 	retval = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_OPTER | FLASH_STRT | FLASH_OPTWRE);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	retval = stm32x_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	/* clear read protection option byte
 	 * this will also force a device unlock if set */
 	stm32x_info->option_bytes.rdp = stm32x_info->default_rdp;
 
 	return ERROR_OK;
+
+flash_lock:
+	target_write_u32(target, STM32_FLASH_CR_B0, FLASH_LOCK);
+	return retval;
 }
 
 static int stm32x_write_options(struct flash_bank *bank)
@@ -303,20 +309,20 @@ static int stm32x_write_options(struct flash_bank *bank)
 		return retval;
 	retval = target_write_u32(target, STM32_FLASH_KEYR_B0, KEY2);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	/* unlock option flash registers */
 	retval = target_write_u32(target, STM32_FLASH_OPTKEYR_B0, KEY1);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 	retval = target_write_u32(target, STM32_FLASH_OPTKEYR_B0, KEY2);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	/* program option bytes */
 	retval = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_OPTPG | FLASH_OPTWRE);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	uint8_t opt_bytes[16];
 
@@ -329,18 +335,20 @@ static int stm32x_write_options(struct flash_bank *bank)
 	target_buffer_set_u16(target, opt_bytes + 12, (stm32x_info->option_bytes.protection >> 16) & 0xff);
 	target_buffer_set_u16(target, opt_bytes + 14, (stm32x_info->option_bytes.protection >> 24) & 0xff);
 
+	/* Block write is preferred in favour of operation with ancient ST-Link
+	 * firmwares without 16-bit memory access. See
+	 * 480: flash: stm32f1x: write option bytes using the loader
+	 * https://review.openocd.org/c/openocd/+/480
+	 */
 	retval = stm32x_write_block(bank, opt_bytes, STM32_OB_RDP, sizeof(opt_bytes) / 2);
-	if (retval != ERROR_OK) {
-		if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE)
-			LOG_ERROR("working area required to erase options bytes");
-		return retval;
+
+flash_lock:
+	{
+		int retval2 = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_LOCK);
+		if (retval == ERROR_OK)
+			retval = retval2;
 	}
-
-	retval = target_write_u32(target, STM32_FLASH_CR_B0, FLASH_LOCK);
-	if (retval != ERROR_OK)
-		return retval;
-
-	return ERROR_OK;
+	return retval;
 }
 
 static int stm32x_protect_check(struct flash_bank *bank)
@@ -384,31 +392,33 @@ static int stm32x_erase(struct flash_bank *bank, unsigned int first,
 		return retval;
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_KEYR), KEY2);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	for (unsigned int i = first; i <= last; i++) {
 		retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_PER);
 		if (retval != ERROR_OK)
-			return retval;
+			goto flash_lock;
 		retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_AR),
 				bank->base + bank->sectors[i].offset);
 		if (retval != ERROR_OK)
-			return retval;
+			goto flash_lock;
 		retval = target_write_u32(target,
 				stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_PER | FLASH_STRT);
 		if (retval != ERROR_OK)
-			return retval;
+			goto flash_lock;
 
 		retval = stm32x_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
 		if (retval != ERROR_OK)
-			return retval;
+			goto flash_lock;
 	}
 
-	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
-	if (retval != ERROR_OK)
-		return retval;
-
-	return ERROR_OK;
+flash_lock:
+	{
+		int retval2 = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
+		if (retval == ERROR_OK)
+			retval = retval2;
+	}
+	return retval;
 }
 
 static int stm32x_protect(struct flash_bank *bank, int set, unsigned int first,
@@ -442,17 +452,16 @@ static int stm32x_protect(struct flash_bank *bank, int set, unsigned int first,
 	return stm32x_write_options(bank);
 }
 
-static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
-		uint32_t address, uint32_t count)
+static int stm32x_write_block_async(struct flash_bank *bank, const uint8_t *buffer,
+		uint32_t address, uint32_t hwords_count)
 {
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 	struct target *target = bank->target;
-	uint32_t buffer_size = 16384;
+	uint32_t buffer_size;
 	struct working_area *write_algorithm;
 	struct working_area *source;
-	struct reg_param reg_params[5];
 	struct armv7m_algorithm armv7m_info;
-	int retval = ERROR_OK;
+	int retval;
 
 	static const uint8_t stm32x_flash_write_code[] = {
 #include "../../../contrib/loaders/flash/stm32/stm32f1x.inc"
@@ -473,18 +482,27 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	}
 
 	/* memory buffer */
-	while (target_alloc_working_area_try(target, buffer_size, &source) != ERROR_OK) {
-		buffer_size /= 2;
-		buffer_size &= ~3UL; /* Make sure it's 4 byte aligned */
-		if (buffer_size <= 256) {
-			/* we already allocated the writing code, but failed to get a
-			 * buffer, free the algorithm */
-			target_free_working_area(target, write_algorithm);
+	buffer_size = target_get_working_area_avail(target);
+	buffer_size = MIN(hwords_count * 2, MAX(buffer_size, 256));
+	/* Normally we allocate all available working area.
+	 * MIN shrinks buffer_size if the size of the written block is smaller.
+	 * MAX prevents using async algo if the available working area is smaller
+	 * than 256, the following allocation fails with
+	 * ERROR_TARGET_RESOURCE_NOT_AVAILABLE and slow flashing takes place.
+	 */
 
-			LOG_WARNING("no large enough working area available, can't do block memory writes");
-			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
-		}
+	retval = target_alloc_working_area(target, buffer_size, &source);
+	/* Allocated size is always 32-bit word aligned */
+	if (retval != ERROR_OK) {
+		target_free_working_area(target, write_algorithm);
+		LOG_WARNING("no large enough working area available, can't do block memory writes");
+		/* target_alloc_working_area() may return ERROR_FAIL if area backup fails:
+		 * convert any error to ERROR_TARGET_RESOURCE_NOT_AVAILABLE
+		 */
+		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 	}
+
+	struct reg_param reg_params[5];
 
 	init_reg_param(&reg_params[0], "r0", 32, PARAM_IN_OUT);	/* flash base (in), status (out) */
 	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);	/* count (halfword-16bit) */
@@ -493,7 +511,7 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	init_reg_param(&reg_params[4], "r4", 32, PARAM_IN_OUT);	/* target address */
 
 	buf_set_u32(reg_params[0].value, 0, 32, stm32x_info->register_base);
-	buf_set_u32(reg_params[1].value, 0, 32, count);
+	buf_set_u32(reg_params[1].value, 0, 32, hwords_count);
 	buf_set_u32(reg_params[2].value, 0, 32, source->address);
 	buf_set_u32(reg_params[3].value, 0, 32, source->address + source->size);
 	buf_set_u32(reg_params[4].value, 0, 32, address);
@@ -501,39 +519,73 @@ static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
 	armv7m_info.common_magic = ARMV7M_COMMON_MAGIC;
 	armv7m_info.core_mode = ARM_MODE_THREAD;
 
-	retval = target_run_flash_async_algorithm(target, buffer, count, 2,
+	retval = target_run_flash_async_algorithm(target, buffer, hwords_count, 2,
 			0, NULL,
-			5, reg_params,
+			ARRAY_SIZE(reg_params), reg_params,
 			source->address, source->size,
 			write_algorithm->address, 0,
 			&armv7m_info);
 
 	if (retval == ERROR_FLASH_OPERATION_FAILED) {
-		LOG_ERROR("flash write failed at address 0x%"PRIx32,
+		/* Actually we just need to check for programming errors
+		 * stm32x_wait_status_busy also reports error and clears status bits.
+		 *
+		 * Target algo returns flash status in r0 only if properly finished.
+		 * It is safer to re-read status register.
+		 */
+		int retval2 = stm32x_wait_status_busy(bank, 5);
+		if (retval2 != ERROR_OK)
+			retval = retval2;
+
+		LOG_ERROR("flash write failed just before address 0x%"PRIx32,
 				buf_get_u32(reg_params[4].value, 0, 32));
-
-		if (buf_get_u32(reg_params[0].value, 0, 32) & FLASH_PGERR) {
-			LOG_ERROR("flash memory not erased before writing");
-			/* Clear but report errors */
-			target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_SR), FLASH_PGERR);
-		}
-
-		if (buf_get_u32(reg_params[0].value, 0, 32) & FLASH_WRPRTERR) {
-			LOG_ERROR("flash memory write protected");
-			/* Clear but report errors */
-			target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_SR), FLASH_WRPRTERR);
-		}
 	}
+
+	for (unsigned int i = 0; i < ARRAY_SIZE(reg_params); i++)
+		destroy_reg_param(&reg_params[i]);
 
 	target_free_working_area(target, source);
 	target_free_working_area(target, write_algorithm);
 
-	destroy_reg_param(&reg_params[0]);
-	destroy_reg_param(&reg_params[1]);
-	destroy_reg_param(&reg_params[2]);
-	destroy_reg_param(&reg_params[3]);
-	destroy_reg_param(&reg_params[4]);
+	return retval;
+}
 
+/** Writes a block to flash either using target algorithm
+ *  or use fallback, host controlled halfword-by-halfword access.
+ *  Flash controller must be unlocked before this call.
+ */
+static int stm32x_write_block(struct flash_bank *bank,
+		const uint8_t *buffer, uint32_t address, uint32_t hwords_count)
+{
+	struct target *target = bank->target;
+
+	/* The flash write must be aligned to a halfword boundary.
+	 * The flash infrastructure ensures it, do just a security check
+	 */
+	assert(address % 2 == 0);
+
+	/* try using a block write - on ARM architecture or... */
+	int retval = stm32x_write_block_async(bank, buffer, address, hwords_count);
+
+	if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE) {
+		/* if block write failed (no sufficient working area),
+		 * we use normal (slow) single halfword accesses */
+		LOG_WARNING("couldn't use block writes, falling back to single memory accesses");
+
+		while (hwords_count > 0) {
+			retval = target_write_memory(target, address, 2, 1, buffer);
+			if (retval != ERROR_OK)
+				return retval;
+
+			retval = stm32x_wait_status_busy(bank, 5);
+			if (retval != ERROR_OK)
+				return retval;
+
+			hwords_count--;
+			buffer += 2;
+			address += 2;
+		}
+	}
 	return retval;
 }
 
@@ -541,78 +593,41 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		uint32_t offset, uint32_t count)
 {
 	struct target *target = bank->target;
-	uint8_t *new_buffer = NULL;
 
 	if (bank->target->state != TARGET_HALTED) {
 		LOG_ERROR("Target not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if (offset & 0x1) {
-		LOG_ERROR("offset 0x%" PRIx32 " breaks required 2-byte alignment", offset);
-		return ERROR_FLASH_DST_BREAKS_ALIGNMENT;
-	}
+	/* The flash write must be aligned to a halfword boundary.
+	 * The flash infrastructure ensures it, do just a security check
+	 */
+	assert(offset % 2 == 0);
+	assert(count % 2 == 0);
 
-	/* If there's an odd number of bytes, the data has to be padded. Duplicate
-	 * the buffer and use the normal code path with a single block write since
-	 * it's probably cheaper than to special case the last odd write using
-	 * discrete accesses. */
-	if (count & 1) {
-		new_buffer = malloc(count + 1);
-		if (!new_buffer) {
-			LOG_ERROR("odd number of bytes to write and no memory for padding buffer");
-			return ERROR_FAIL;
-		}
-		LOG_INFO("odd number of bytes to write, padding with 0xff");
-		buffer = memcpy(new_buffer, buffer, count);
-		new_buffer[count++] = 0xff;
-	}
-
-	uint32_t words_remaining = count / 2;
 	int retval, retval2;
 
 	/* unlock flash registers */
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_KEYR), KEY1);
 	if (retval != ERROR_OK)
-		goto cleanup;
+		return retval;
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_KEYR), KEY2);
 	if (retval != ERROR_OK)
-		goto cleanup;
+		goto reset_pg_and_lock;
 
+	/* enable flash programming */
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_PG);
 	if (retval != ERROR_OK)
-		goto cleanup;
+		goto reset_pg_and_lock;
 
-	/* try using a block write */
-	retval = stm32x_write_block(bank, buffer, bank->base + offset, words_remaining);
-
-	if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE) {
-		/* if block write failed (no sufficient working area),
-		 * we use normal (slow) single halfword accesses */
-		LOG_WARNING("couldn't use block writes, falling back to single memory accesses");
-
-		while (words_remaining > 0) {
-			retval = target_write_memory(target, bank->base + offset, 2, 1, buffer);
-			if (retval != ERROR_OK)
-				goto reset_pg_and_lock;
-
-			retval = stm32x_wait_status_busy(bank, 5);
-			if (retval != ERROR_OK)
-				goto reset_pg_and_lock;
-
-			words_remaining--;
-			buffer += 2;
-			offset += 2;
-		}
-	}
+	/* write to flash */
+	retval = stm32x_write_block(bank, buffer, bank->base + offset, count / 2);
 
 reset_pg_and_lock:
 	retval2 = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
 	if (retval == ERROR_OK)
 		retval = retval2;
 
-cleanup:
-	free(new_buffer);
 	return retval;
 }
 
@@ -1473,8 +1488,10 @@ COMMAND_HANDLER(stm32x_handle_options_load_command)
 	if (retval != ERROR_OK)
 		return retval;
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_KEYR), KEY2);
-	if (retval != ERROR_OK)
+	if (retval != ERROR_OK) {
+		(void)target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
 		return retval;
+	}
 
 	/* force re-load of option bytes - generates software reset */
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_OBL_LAUNCH);
@@ -1499,26 +1516,26 @@ static int stm32x_mass_erase(struct flash_bank *bank)
 		return retval;
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_KEYR), KEY2);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	/* mass erase flash memory */
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_MER);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR),
 			FLASH_MER | FLASH_STRT);
 	if (retval != ERROR_OK)
-		return retval;
+		goto flash_lock;
 
 	retval = stm32x_wait_status_busy(bank, FLASH_ERASE_TIMEOUT);
-	if (retval != ERROR_OK)
-		return retval;
 
-	retval = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
-	if (retval != ERROR_OK)
-		return retval;
-
-	return ERROR_OK;
+flash_lock:
+	{
+		int retval2 = target_write_u32(target, stm32x_get_flash_reg(bank, STM32_FLASH_CR), FLASH_LOCK);
+		if (retval == ERROR_OK)
+			retval = retval2;
+	}
+	return retval;
 }
 
 COMMAND_HANDLER(stm32x_handle_mass_erase_command)
