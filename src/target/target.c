@@ -57,6 +57,7 @@
 #include "transport/transport.h"
 #include "arm_cti.h"
 #include "smp.h"
+#include "semihosting_common.h"
 
 /* default halt wait timeout (ms) */
 #define DEFAULT_HALT_TIMEOUT 5000
@@ -2260,6 +2261,8 @@ static void target_destroy(struct target *target)
 	if (target->type->deinit_target)
 		target->type->deinit_target(target);
 
+	if (target->semihosting)
+		free(target->semihosting->basedir);
 	free(target->semihosting);
 
 	jtag_unregister_event_callback(jtag_enable_callback, target);
@@ -6479,7 +6482,7 @@ static int jim_target_smp(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 	}
 
 	if (target && target->rtos)
-		retval = rtos_smp_init(head->target);
+		retval = rtos_smp_init(target);
 
 	return retval;
 }
