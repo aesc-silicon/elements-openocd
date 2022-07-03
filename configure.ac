@@ -24,6 +24,12 @@ AC_PROG_CC
 m4_version_prereq([2.70],[],[AC_PROG_CC_C99])
 AM_PROG_CC_C_O
 AC_PROG_RANLIB
+
+# If macro PKG_PROG_PKG_CONFIG is not available, Autoconf generates a misleading error message,
+# so check for existence first, and otherwise provide helpful advice.
+m4_ifndef([PKG_PROG_PKG_CONFIG], [m4_fatal(m4_normalize([
+  Macro PKG_PROG_PKG_CONFIG is not available.
+  It is usually defined in file pkg.m4 provided by package pkg-config.]))])
 PKG_PROG_PKG_CONFIG([0.23])
 
 dnl disable checks for C++, Fortran and GNU Java Compiler
@@ -122,7 +128,8 @@ m4_define([USB1_ADAPTERS],
 	[[opendous], [eStick/opendous JTAG Programmer], [OPENDOUS]],
 	[[armjtagew], [Olimex ARM-JTAG-EW Programmer], [ARMJTAGEW]],
 	[[rlink], [Raisonance RLink JTAG Programmer], [RLINK]],
-	[[usbprog], [USBProg JTAG Programmer], [USBPROG]]])
+	[[usbprog], [USBProg JTAG Programmer], [USBPROG]],
+	[[esp_usb_jtag], [Espressif JTAG Programmer], [ESP_USB_JTAG]]])
 
 m4_define([DEPRECATED_USB1_ADAPTERS],
 	[[[aice], [Andes JTAG Programmer (deprecated)], [AICE]]])
@@ -711,6 +718,11 @@ AS_IF([test "x$enable_jlink" != "xno"], [
 
 # Presto needs the bitq module
 AS_IF([test "x$enable_presto" != "xno"], [
+  build_bitq=yes
+])
+
+# esp-usb-jtag also needs the bitq module
+AS_IF([test "x$enable_esp_usb_jtag" != "xno"], [
   build_bitq=yes
 ])
 
