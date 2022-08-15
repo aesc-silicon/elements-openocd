@@ -905,32 +905,33 @@ COMMAND_HANDLER(handle_armv4_5_reg_command)
 	return ERROR_OK;
 }
 
-COMMAND_HANDLER(handle_armv4_5_core_state_command)
+COMMAND_HANDLER(handle_arm_core_state_command)
 {
 	struct target *target = get_current_target(CMD_CTX);
 	struct arm *arm = target_to_arm(target);
+	int ret = ERROR_OK;
 
 	if (!is_arm(arm)) {
 		command_print(CMD, "current target isn't an ARM");
 		return ERROR_FAIL;
 	}
 
-	if (arm->core_type == ARM_CORE_TYPE_M_PROFILE) {
-		/* armv7m not supported */
-		command_print(CMD, "Unsupported Command");
-		return ERROR_OK;
-	}
-
 	if (CMD_ARGC > 0) {
-		if (strcmp(CMD_ARGV[0], "arm") == 0)
-			arm->core_state = ARM_STATE_ARM;
+		if (strcmp(CMD_ARGV[0], "arm") == 0) {
+			if (arm->core_type == ARM_CORE_TYPE_M_PROFILE) {
+				command_print(CMD, "arm mode not supported on Cortex-M");
+				ret = ERROR_FAIL;
+			} else {
+				arm->core_state = ARM_STATE_ARM;
+			}
+		}
 		if (strcmp(CMD_ARGV[0], "thumb") == 0)
 			arm->core_state = ARM_STATE_THUMB;
 	}
 
 	command_print(CMD, "core state: %s", arm_state_strings[arm->core_state]);
 
-	return ERROR_OK;
+	return ret;
 }
 
 COMMAND_HANDLER(handle_arm_disassemble_command)
@@ -1125,20 +1126,6 @@ static const struct command_registration arm_exec_command_handlers[] = {
 		.usage = "",
 	},
 	{
-		.name = "core_state",
-		.handler = handle_armv4_5_core_state_command,
-		.mode = COMMAND_EXEC,
-		.usage = "['arm'|'thumb']",
-		.help = "display/change ARM core state",
-	},
-	{
-		.name = "disassemble",
-		.handler = handle_arm_disassemble_command,
-		.mode = COMMAND_EXEC,
-		.usage = "address [count ['thumb']]",
-		.help = "disassemble instructions",
-	},
-	{
 		.name = "mcr",
 		.mode = COMMAND_EXEC,
 		.jim_handler = &jim_mcrmrc,
@@ -1153,10 +1140,32 @@ static const struct command_registration arm_exec_command_handlers[] = {
 		.usage = "cpnum op1 CRn CRm op2",
 	},
 	{
+		.chain = arm_all_profiles_command_handlers,
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+const struct command_registration arm_all_profiles_command_handlers[] = {
+	{
+		.name = "core_state",
+		.handler = handle_arm_core_state_command,
+		.mode = COMMAND_EXEC,
+		.usage = "['arm'|'thumb']",
+		.help = "display/change ARM core state",
+	},
+	{
+		.name = "disassemble",
+		.handler = handle_arm_disassemble_command,
+		.mode = COMMAND_EXEC,
+		.usage = "address [count ['thumb']]",
+		.help = "disassemble instructions",
+	},
+	{
 		.chain = semihosting_common_handlers,
 	},
 	COMMAND_REGISTRATION_DONE
 };
+
 const struct command_registration arm_command_handlers[] = {
 	{
 		.name = "arm",
