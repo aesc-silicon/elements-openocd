@@ -1323,6 +1323,8 @@ static int gdb_set_registers_packet(struct connection *connection,
 	packet_p = packet;
 	for (i = 0; i < reg_list_size; i++) {
 		uint8_t *bin_buf;
+		if (!reg_list[i] || !reg_list[i]->exist || reg_list[i]->hidden)
+			continue;
 		int chars = (DIV_ROUND_UP(reg_list[i]->size, 8) * 2);
 
 		if (packet_p + chars > packet + packet_size)
@@ -1375,7 +1377,8 @@ static int gdb_get_register_packet(struct connection *connection,
 	if (retval != ERROR_OK)
 		return gdb_error(connection, retval);
 
-	if (reg_list_size <= reg_num) {
+	if ((reg_list_size <= reg_num) || !reg_list[reg_num] ||
+		!reg_list[reg_num]->exist || reg_list[reg_num]->hidden) {
 		LOG_ERROR("gdb requested a non-existing register (reg_num=%d)", reg_num);
 		return ERROR_SERVER_REMOTE_CLOSED;
 	}
@@ -1437,7 +1440,8 @@ static int gdb_set_register_packet(struct connection *connection,
 		return gdb_error(connection, retval);
 	}
 
-	if (reg_list_size <= reg_num) {
+	if ((reg_list_size <= reg_num) || !reg_list[reg_num] ||
+		!reg_list[reg_num]->exist || reg_list[reg_num]->hidden) {
 		LOG_ERROR("gdb requested a non-existing register (reg_num=%d)", reg_num);
 		free(bin_buf);
 		free(reg_list);
@@ -1770,7 +1774,10 @@ static int gdb_breakpoint_watchpoint_packet(struct connection *connection,
 		case 1:
 			if (packet[0] == 'Z') {
 				retval = breakpoint_add(target, address, size, bp_type);
-				if (retval != ERROR_OK) {
+				if (retval == ERROR_NOT_IMPLEMENTED) {
+					/* Send empty reply to report that breakpoints of this type are not supported */
+					gdb_put_packet(connection, "", 0);
+				} else if (retval != ERROR_OK) {
 					retval = gdb_error(connection, retval);
 					if (retval != ERROR_OK)
 						return retval;
@@ -1787,7 +1794,10 @@ static int gdb_breakpoint_watchpoint_packet(struct connection *connection,
 		{
 			if (packet[0] == 'Z') {
 				retval = watchpoint_add(target, address, size, wp_type, 0, 0xffffffffu);
-				if (retval != ERROR_OK) {
+				if (retval == ERROR_NOT_IMPLEMENTED) {
+					/* Send empty reply to report that watchpoints of this type are not supported */
+					gdb_put_packet(connection, "", 0);
+				} else if (retval != ERROR_OK) {
 					retval = gdb_error(connection, retval);
 					if (retval != ERROR_OK)
 						return retval;
@@ -2955,6 +2965,11 @@ static int gdb_query_packet(struct connection *connection,
 		gdb_connection->noack_mode = 1;
 		gdb_put_packet(connection, "OK", 2);
 		return ERROR_OK;
+	} else if (target->type->gdb_query_custom) {
+		char *buffer = NULL;
+		int ret = target->type->gdb_query_custom(target, packet, &buffer);
+		gdb_put_packet(connection, buffer, strlen(buffer));
+		return ret;
 	}
 
 	gdb_put_packet(connection, "", 0);

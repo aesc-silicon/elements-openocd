@@ -2412,7 +2412,57 @@ when external configuration (such as jumpering) changes what
 the hardware can support.
 @end deffn
 
+@anchor{adapter gpio}
+@deffn {Config Command} {adapter gpio [ @
+    @option{tdo} | @option{tdi} | @option{tms} | @option{tck} | @option{trst} | @
+    @option{swdio} | @option{swdio_dir} | @option{swclk} | @option{srst} | @
+    @option{led} @
+    [ @
+        gpio_number | @option{-chip} chip_number | @
+        @option{-active-high} | @option{-active-low} | @
+        @option{-push-pull} | @option{-open-drain} | @option{-open-source} | @
+        @option{-pull-none} | @option{-pull-up} | @option{-pull-down} | @
+        @option{-init-inactive} | @option{-init-active} | @option{-init-input} @
+    ] ]}
 
+Define the GPIO mapping that the adapter will use. The following signals can be
+defined:
+
+@itemize @minus
+@item @option{tdo}, @option{tdi}, @option{tms}, @option{tck}, @option{trst}:
+JTAG transport signals
+@item @option{swdio}, @option{swclk}: SWD transport signals
+@item @option{swdio_dir}: optional swdio buffer control signal
+@item @option{srst}: system reset signal
+@item @option{led}: optional activity led
+
+@end itemize
+
+Some adapters require that the GPIO chip number is set in addition to the GPIO
+number. The configuration options enable signals to be defined as active-high or
+active-low. The output drive mode can be set to push-pull, open-drain or
+open-source. Most adapters will have to emulate open-drain or open-source drive
+modes by switching between an input and output. Input and output signals can be
+instructed to use a pull-up or pull-down resistor, assuming it is supported by
+the adaptor driver and hardware. The initial state of outputs may also be set,
+"active" state means 1 for active-high outputs and 0 for active-low outputs.
+Bidirectional signals may also be initialized as an input. If the swdio signal
+is buffered the buffer direction can be controlled with the swdio_dir signal;
+the active state means that the buffer should be set as an output with respect
+to the adapter. The command options are cumulative with later commands able to
+override settings defined by earlier ones. The two commands @command{gpio led 7
+-active-high} and @command{gpio led -chip 1 -active-low} sent sequentially are
+equivalent to issuing the single command @command{gpio led 7 -chip 1
+-active-low}. It is not permissible to set the drive mode or initial state for
+signals which are inputs. The drive mode for the srst and trst signals must be
+set with the @command{adapter reset_config} command. It is not permissible to
+set the initial state of swdio_dir as it is derived from the initial state of
+swdio. The command @command{adapter gpio} prints the current configuration for
+all GPIOs while the command @command{adapter gpio gpio_name} prints the current
+configuration for gpio_name. Not all adapters support this generic GPIO mapping,
+some require their own commands to define the GPIOs used. Adapters that support
+the generic mapping may not support all of the listed options.
+@end deffn
 
 @deffn {Command} {adapter name}
 Returns the name of the debug adapter driver being used.
@@ -3337,171 +3387,28 @@ registers directly. The memory mapping requires read and write permission to
 kernel memory; if /dev/gpiomem exists it will be used, otherwise /dev/mem will
 be used. The driver restores the GPIO state on exit.
 
-All four GPIO ports are available. GPIOs numbered 0 to 31 are mapped to GPIO port
-0, GPIO numbers 32 to 63 are mapped to GPIO port 1 and so on.
-
-See @file{interface/beaglebone-swd-native.cfg} for a sample configuration file.
-
-@deffn {Config Command} {am335xgpio jtag_nums} @var{tck} @var{tms} @var{tdi} @var{tdo}
-Set JTAG transport GPIO numbers for TCK, TMS, TDI, and TDO (in that order).
-Must be specified to enable JTAG transport. These pins can also be specified
-individually.
-@end deffn
-
-@deffn {Config Command} {am335xgpio tck_num} @var{tck}
-Set TCK GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{am335xgpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio tms_num} @var{tms}
-Set TMS GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{am335xgpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio tdo_num} @var{tdo}
-Set TDO GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{am335xgpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio tdi_num} @var{tdi}
-Set TDI GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{am335xgpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio swd_nums} @var{swclk} @var{swdio}
-Set SWD transport GPIO numbers for SWCLK and SWDIO (in that order). Must be
-specified to enable SWD transport. These pins can also be specified individually.
-@end deffn
-
-@deffn {Config Command} {am335xgpio swclk_num} @var{swclk}
-Set SWCLK GPIO number. Must be specified to enable SWD transport. Can also be
-specified using the configuration command @command{am335xgpio swd_nums}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio swdio_num} @var{swdio}
-Set SWDIO GPIO number. Must be specified to enable SWD transport. Can also be
-specified using the configuration command @command{am335xgpio swd_nums}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio swdio_dir_num} @var{swdio_dir}
-Set SWDIO direction control pin GPIO number. If specified, this pin can be used
-to control the direction of an external buffer on the SWDIO pin. The direction
-control state can be set with the command @command{am335xgpio
-swdio_dir_output_state}. If not specified this feature is disabled.
-@end deffn
-
-@deffn {Config Command} {am335xgpio swdio_dir_output_state} @var{output_state}
-Set the state required for an external SWDIO buffer to be an output. Valid
-values are @option{on} (default) and @option{off}.
-@end deffn
-
-@deffn {Config Command} {am335xgpio srst_num} @var{srst}
-Set SRST GPIO number. Must be specified to enable SRST.
-@end deffn
-
-@deffn {Config Command} {am335xgpio trst_num} @var{trst}
-Set TRST GPIO number. Must be specified to enable TRST.
-@end deffn
-
-@deffn {Config Command} {am335xgpio led_num} @var{led}
-Set activity LED GPIO number. If not specified an activity LED is not enabled.
-@end deffn
-
-@deffn {Config Command} {am335xgpio led_on_state} @var{on_state}
-Set required logic level for the LED to be on. Valid values are @option{on}
-(default) and @option{off}.
-@end deffn
+All four GPIO ports are available. GPIO configuration is handled by the generic
+command @ref{adapter gpio, @command{adapter gpio}}.
 
 @deffn {Config Command} {am335xgpio speed_coeffs} @var{speed_coeff} @var{speed_offset}
 Set SPEED_COEFF and SPEED_OFFSET for delay calculations. If unspecified
 speed_coeff defaults to 600000 and speed_offset defaults to 575.
 @end deffn
 
+See @file{interface/beaglebone-swd-native.cfg} for a sample configuration file.
+
 @end deffn
 
 
 @deffn {Interface Driver} {linuxgpiod}
-Linux provides userspace access to GPIO through libgpiod since Linux kernel version v4.6.
-The driver emulates either JTAG or SWD transport through bitbanging.
+Linux provides userspace access to GPIO through libgpiod since Linux kernel
+version v4.6. The driver emulates either JTAG or SWD transport through
+bitbanging. There are no driver-specific commands, all GPIO configuration is
+handled by the generic command @ref{adapter gpio, @command{adapter gpio}}. This
+driver supports the resistor pull options provided by the @command{adapter gpio}
+command but the underlying hardware may not be able to support them.
 
-See @file{interface/dln-2-gpiod.cfg} for a sample config.
-
-@deffn {Config Command} {linuxgpiod gpiochip} @var{chip}
-Set the GPIO chip number for all GPIOs used by linuxgpiod. If GPIOs use
-different GPIO chips then the individual GPIO configuration commands (i.e., not
-@command{linuxgpiod jtag_nums} or @command{linuxgpiod swd_nums}) can be used to
-set chip numbers independently for each GPIO.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod jtag_nums} @var{tck} @var{tms} @var{tdi} @var{tdo}
-Set JTAG transport GPIO numbers for TCK, TMS, TDI, and TDO (in that order). Must
-be specified to enable JTAG transport. These pins can also be specified
-individually.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod tck_num} [@var{chip}] @var{tck}
-Set TCK GPIO number, and optionally TCK chip number. Must be specified to enable
-JTAG transport. Can also be specified using the configuration command
-@command{linuxgpiod jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod tms_num} [@var{chip}] @var{tms}
-Set TMS GPIO number, and optionally TMS chip number. Must be specified to enable
-JTAG transport. Can also be specified using the configuration command
-@command{linuxgpiod jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod tdo_num} [@var{chip}] @var{tdo}
-Set TDO GPIO number, and optionally TDO chip number. Must be specified to enable
-JTAG transport. Can also be specified using the configuration command
-@command{linuxgpiod jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod tdi_num} [@var{chip}] @var{tdi}
-Set TDI GPIO number, and optionally TDI chip number. Must be specified to enable
-JTAG transport. Can also be specified using the configuration command
-@command{linuxgpiod jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod trst_num} [@var{chip}] @var{trst}
-Set TRST GPIO number, and optionally TRST chip number. Must be specified to
-enable TRST.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod swd_nums} @var{swclk} @var{swdio}
-Set SWD transport GPIO numbers for SWCLK and SWDIO (in that order). Must be
-specified to enable SWD transport. These pins can also be specified
-individually.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod swclk_num} [@var{chip}] @var{swclk}
-Set SWCLK GPIO number, and optionally SWCLK chip number. Must be specified to
-enable SWD transport. Can also be specified using the configuration command
-@command{linuxgpiod swd_nums}.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod swdio_num} [@var{chip}] @var{swdio}
-Set SWDIO GPIO number, and optionally SWDIO chip number. Must be specified to
-enable SWD transport. Can also be specified using the configuration command
-@command{linuxgpiod swd_nums}.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod swdio_dir_num} [@var{chip}] @var{swdio_dir}
-Set SWDIO direction control GPIO number, and optionally SWDIO direction control
-chip number. If specified, this GPIO can be used to control the direction of an
-external buffer connected to the SWDIO GPIO (set=output mode, clear=input mode).
-@end deffn
-
-@deffn {Config Command} {linuxgpiod srst_num} [@var{chip}] @var{srst}
-Set SRST GPIO number, and optionally SRST chip number. Must be specified to
-enable SRST.
-@end deffn
-
-@deffn {Config Command} {linuxgpiod led_num} [@var{chip}] @var{led}
-Set activity LED GPIO number, and optionally activity LED chip number. If not
-specified an activity LED is not enabled.
-@end deffn
-
+See @file{interface/dln-2-gpiod.cfg} for a sample configuration file.
 @end deffn
 
 
@@ -5149,7 +5056,7 @@ The value should normally correspond to a static mapping for the
 
 @anchor{rtostype}
 @item @code{-rtos} @var{rtos_type} -- enable rtos support for target,
-@var{rtos_type} can be one of @option{auto}, @option{eCos},
+@var{rtos_type} can be one of @option{auto}, @option{none}, @option{eCos},
 @option{ThreadX}, @option{FreeRTOS}, @option{linux}, @option{ChibiOS},
 @option{embKernel}, @option{mqx}, @option{uCOS-III}, @option{nuttx},
 @option{RIOT}, @option{Zephyr}
@@ -11847,6 +11754,11 @@ Currently supported rtos's include:
 @item @option{hwthread} (This is not an actual RTOS. @xref{usingopenocdsmpwithgdb,,Using OpenOCD SMP with GDB}.)
 @item @option{Zephyr}
 @end itemize
+
+At any time, it's possible to drop the selected RTOS using:
+@example
+$_TARGETNAME configure -rtos none
+@end example
 
 Before an RTOS can be detected, it must export certain symbols; otherwise, it cannot
 be used by OpenOCD. Below is a list of the required symbols for each supported RTOS.
