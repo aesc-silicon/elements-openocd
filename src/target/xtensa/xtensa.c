@@ -300,7 +300,7 @@ union xtensa_reg_val_u {
 	uint8_t buf[4];
 };
 
-const struct xtensa_keyval_info_s xt_qerr[XT_QERR_NUM] = {
+static const struct xtensa_keyval_info_s xt_qerr[XT_QERR_NUM] = {
 	{ .chrval = "E00", .intval = ERROR_FAIL },
 	{ .chrval = "E01", .intval = ERROR_FAIL },
 	{ .chrval = "E02", .intval = ERROR_COMMAND_ARGUMENT_INVALID },
@@ -519,7 +519,7 @@ static int xtensa_queue_pwr_reg_write(struct xtensa *xtensa, unsigned int reg, u
 }
 
 /* NOTE: Assumes A3 has already been saved */
-int xtensa_window_state_save(struct target *target, uint32_t *woe)
+static int xtensa_window_state_save(struct target *target, uint32_t *woe)
 {
 	struct xtensa *xtensa = target_to_xtensa(target);
 	int woe_dis;
@@ -547,7 +547,7 @@ int xtensa_window_state_save(struct target *target, uint32_t *woe)
 }
 
 /* NOTE: Assumes A3 has already been saved */
-void xtensa_window_state_restore(struct target *target, uint32_t woe)
+static void xtensa_window_state_restore(struct target *target, uint32_t woe)
 {
 	struct xtensa *xtensa = target_to_xtensa(target);
 	if (xtensa->core_config->windowed) {
@@ -776,7 +776,7 @@ static inline bool xtensa_is_stopped(struct target *target)
 int xtensa_examine(struct target *target)
 {
 	struct xtensa *xtensa = target_to_xtensa(target);
-	unsigned int cmd = PWRCTL_DEBUGWAKEUP | PWRCTL_MEMWAKEUP | PWRCTL_COREWAKEUP;
+	unsigned int cmd = PWRCTL_DEBUGWAKEUP(xtensa) | PWRCTL_MEMWAKEUP(xtensa) | PWRCTL_COREWAKEUP(xtensa);
 
 	LOG_DEBUG("coreid = %d", target->coreid);
 
@@ -786,7 +786,7 @@ int xtensa_examine(struct target *target)
 	}
 
 	xtensa_queue_pwr_reg_write(xtensa, XDMREG_PWRCTL, cmd);
-	xtensa_queue_pwr_reg_write(xtensa, XDMREG_PWRCTL, cmd | PWRCTL_JTAGDEBUGUSE);
+	xtensa_queue_pwr_reg_write(xtensa, XDMREG_PWRCTL, cmd | PWRCTL_JTAGDEBUGUSE(xtensa));
 	xtensa_dm_queue_enable(&xtensa->dbg_mod);
 	xtensa_dm_queue_tdi_idle(&xtensa->dbg_mod);
 	int res = xtensa_dm_queue_execute(&xtensa->dbg_mod);
@@ -806,13 +806,13 @@ int xtensa_examine(struct target *target)
 int xtensa_wakeup(struct target *target)
 {
 	struct xtensa *xtensa = target_to_xtensa(target);
-	unsigned int cmd = PWRCTL_DEBUGWAKEUP | PWRCTL_MEMWAKEUP | PWRCTL_COREWAKEUP;
+	unsigned int cmd = PWRCTL_DEBUGWAKEUP(xtensa) | PWRCTL_MEMWAKEUP(xtensa) | PWRCTL_COREWAKEUP(xtensa);
 
 	if (xtensa->reset_asserted)
-		cmd |= PWRCTL_CORERESET;
+		cmd |= PWRCTL_CORERESET(xtensa);
 	xtensa_queue_pwr_reg_write(xtensa, XDMREG_PWRCTL, cmd);
 	/* TODO: can we join this with the write above? */
-	xtensa_queue_pwr_reg_write(xtensa, XDMREG_PWRCTL, cmd | PWRCTL_JTAGDEBUGUSE);
+	xtensa_queue_pwr_reg_write(xtensa, XDMREG_PWRCTL, cmd | PWRCTL_JTAGDEBUGUSE(xtensa));
 	xtensa_dm_queue_tdi_idle(&xtensa->dbg_mod);
 	return xtensa_dm_queue_execute(&xtensa->dbg_mod);
 }
@@ -959,8 +959,8 @@ int xtensa_assert_reset(struct target *target)
 	target->state = TARGET_RESET;
 	xtensa_queue_pwr_reg_write(xtensa,
 		XDMREG_PWRCTL,
-		PWRCTL_JTAGDEBUGUSE | PWRCTL_DEBUGWAKEUP | PWRCTL_MEMWAKEUP |
-		PWRCTL_COREWAKEUP | PWRCTL_CORERESET);
+		PWRCTL_JTAGDEBUGUSE(xtensa) | PWRCTL_DEBUGWAKEUP(xtensa) | PWRCTL_MEMWAKEUP(xtensa) |
+		PWRCTL_COREWAKEUP(xtensa) | PWRCTL_CORERESET(xtensa));
 	xtensa_dm_queue_tdi_idle(&xtensa->dbg_mod);
 	int res = xtensa_dm_queue_execute(&xtensa->dbg_mod);
 	if (res != ERROR_OK)
@@ -980,8 +980,8 @@ int xtensa_deassert_reset(struct target *target)
 			OCDDCR_ENABLEOCD | OCDDCR_DEBUGINTERRUPT);
 	xtensa_queue_pwr_reg_write(xtensa,
 		XDMREG_PWRCTL,
-		PWRCTL_JTAGDEBUGUSE | PWRCTL_DEBUGWAKEUP | PWRCTL_MEMWAKEUP |
-		PWRCTL_COREWAKEUP);
+		PWRCTL_JTAGDEBUGUSE(xtensa) | PWRCTL_DEBUGWAKEUP(xtensa) | PWRCTL_MEMWAKEUP(xtensa) |
+		PWRCTL_COREWAKEUP(xtensa));
 	xtensa_dm_queue_tdi_idle(&xtensa->dbg_mod);
 	int res = xtensa_dm_queue_execute(&xtensa->dbg_mod);
 	if (res != ERROR_OK)
@@ -1586,11 +1586,8 @@ int xtensa_do_step(struct target *target, int current, target_addr_t address, in
 			target->state = TARGET_RUNNING;
 			return ERROR_FAIL;
 		}
-		target->debug_reason = DBG_REASON_SINGLESTEP;
-		target->state = TARGET_HALTED;
 
 		xtensa_fetch_all_regs(target);
-
 		cur_pc = xtensa_reg_get(target, XT_REG_IDX_PC);
 
 		LOG_TARGET_DEBUG(target,
@@ -1620,6 +1617,10 @@ int xtensa_do_step(struct target *target, int current, target_addr_t address, in
 			LOG_DEBUG("Stepped from %" PRIX32 " to %" PRIX32, oldpc, cur_pc);
 		break;
 	} while (true);
+
+	target->debug_reason = DBG_REASON_SINGLESTEP;
+	target->state = TARGET_HALTED;
+	target_call_event_callbacks(target, TARGET_EVENT_HALTED);
 	LOG_DEBUG("Done stepping, PC=%" PRIX32, cur_pc);
 
 	if (cause & DEBUGCAUSE_DB) {
@@ -2013,13 +2014,17 @@ int xtensa_checksum_memory(struct target *target, target_addr_t address, uint32_
 int xtensa_poll(struct target *target)
 {
 	struct xtensa *xtensa = target_to_xtensa(target);
+	if (xtensa_dm_poll(&xtensa->dbg_mod) != ERROR_OK) {
+		target->state = TARGET_UNKNOWN;
+		return ERROR_TARGET_NOT_EXAMINED;
+	}
 
-	int res = xtensa_dm_power_status_read(&xtensa->dbg_mod, PWRSTAT_DEBUGWASRESET |
-		PWRSTAT_COREWASRESET);
+	int res = xtensa_dm_power_status_read(&xtensa->dbg_mod, PWRSTAT_DEBUGWASRESET(xtensa) |
+		PWRSTAT_COREWASRESET(xtensa));
 	if (xtensa->dbg_mod.power_status.stat != xtensa->dbg_mod.power_status.stath)
 		LOG_TARGET_DEBUG(target, "PWRSTAT: read 0x%08" PRIx32 ", clear 0x%08lx, reread 0x%08" PRIx32,
 			xtensa->dbg_mod.power_status.stat,
-			PWRSTAT_DEBUGWASRESET | PWRSTAT_COREWASRESET,
+			PWRSTAT_DEBUGWASRESET(xtensa) | PWRSTAT_COREWASRESET(xtensa),
 			xtensa->dbg_mod.power_status.stath);
 	if (res != ERROR_OK)
 		return res;
@@ -2047,7 +2052,7 @@ int xtensa_poll(struct target *target)
 			"DSR has changed: was 0x%08" PRIx32 " now 0x%08" PRIx32,
 			prev_dsr,
 			xtensa->dbg_mod.core_status.dsr);
-	if (xtensa->dbg_mod.power_status.stath & PWRSTAT_COREWASRESET) {
+	if (xtensa->dbg_mod.power_status.stath & PWRSTAT_COREWASRESET(xtensa)) {
 		/* if RESET state is persitent  */
 		target->state = TARGET_RESET;
 	} else if (!xtensa_dm_is_powered(&xtensa->dbg_mod)) {
@@ -2957,6 +2962,7 @@ void xtensa_target_deinit(struct target *target)
 			LOG_ERROR("Failed to clear OCDDCR_ENABLEOCD!");
 			return;
 		}
+		xtensa_dm_deinit(&xtensa->dbg_mod);
 	}
 	xtensa_free_reg_cache(target);
 	free(xtensa->hw_brps);
@@ -2977,7 +2983,7 @@ const char *xtensa_get_gdb_arch(struct target *target)
 }
 
 /* exe <ascii-encoded hexadecimal instruction bytes> */
-COMMAND_HELPER(xtensa_cmd_exe_do, struct target *target)
+static COMMAND_HELPER(xtensa_cmd_exe_do, struct target *target)
 {
 	struct xtensa *xtensa = target_to_xtensa(target);
 

@@ -3292,65 +3292,11 @@ able to coexist nicely with both sysfs bitbanging and various
 peripherals' kernel drivers. The driver restores the previous
 configuration on exit.
 
-GPIO numbers >= 32 can't be used for performance reasons.
+GPIO numbers >= 32 can't be used for performance reasons. GPIO configuration is
+handled by the generic command @ref{adapter gpio, @command{adapter gpio}}.
 
 See @file{interface/raspberrypi-native.cfg} for a sample config and
 pinout.
-
-@deffn {Config Command} {bcm2835gpio jtag_nums} @var{tck} @var{tms} @var{tdi} @var{tdo}
-Set JTAG transport GPIO numbers for TCK, TMS, TDI, and TDO (in that order).
-Must be specified to enable JTAG transport. These pins can also be specified
-individually.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio tck_num} @var{tck}
-Set TCK GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{bcm2835gpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio tms_num} @var{tms}
-Set TMS GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{bcm2835gpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio tdo_num} @var{tdo}
-Set TDO GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{bcm2835gpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio tdi_num} @var{tdi}
-Set TDI GPIO number. Must be specified to enable JTAG transport. Can also be
-specified using the configuration command @command{bcm2835gpio jtag_nums}.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio swd_nums} @var{swclk} @var{swdio}
-Set SWD transport GPIO numbers for SWCLK and SWDIO (in that order). Must be
-specified to enable SWD transport. These pins can also be specified individually.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio swclk_num} @var{swclk}
-Set SWCLK GPIO number. Must be specified to enable SWD transport. Can also be
-specified using the configuration command @command{bcm2835gpio swd_nums}.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio swdio_num} @var{swdio}
-Set SWDIO GPIO number. Must be specified to enable SWD transport. Can also be
-specified using the configuration command @command{bcm2835gpio swd_nums}.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio swdio_dir_num} @var{swdio} @var{dir}
-Set SWDIO direction control pin GPIO number. If specified, this pin can be used
-to control the direction of an external buffer on the SWDIO pin (set=output
-mode, clear=input mode). If not specified, this feature is disabled.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio srst_num} @var{srst}
-Set SRST GPIO number. Must be specified to enable SRST.
-@end deffn
-
-@deffn {Config Command} {bcm2835gpio trst_num} @var{trst}
-Set TRST GPIO number. Must be specified to enable TRST.
-@end deffn
 
 @deffn {Config Command} {bcm2835gpio speed_coeffs} @var{speed_coeff} @var{speed_offset}
 Set SPEED_COEFF and SPEED_OFFSET for delay calculations. If unspecified,
@@ -7394,6 +7340,31 @@ external QSPI flash; a Boot ROM provides helper functions.
 @example
 flash bank $_FLASHNAME rp2040_flash $_FLASHBASE $_FLASHSIZE 1 32 $_TARGETNAME
 @end example
+@end deffn
+
+@deffn {Flash Driver} {rsl10}
+Supports Onsemi RSL10 microcontroller flash memory.  Uses functions
+stored in ROM to control flash memory interface.
+
+@example
+flash bank $_FLASHNAME rsl10 $_FLASHBASE $_FLASHSIZE 0 0 $_TARGETNAME
+@end example
+
+@deffn {Command} {rsl10 lock} key1 key2 key3 key4
+Writes @var{key1 key2 key3 key4} words to @var{0x81044 0x81048 0x8104c
+0x8050}. Locks debug port by writing @var{0x4C6F634B} to @var{0x81040}.
+
+To unlock use the @command{rsl10 unlock key1 key2 key3 key4} command.
+@end deffn
+
+@deffn {Command} {rsl10 unlock} key1 key2 key3 key4
+Unlocks debug port, by writing @var{key1 key2 key3 key4} words to
+registers through DAP, and clears @var{0x81040} address in flash to 0x1.
+@end deffn
+
+@deffn {Command} {rsl10 mass_erase}
+Erases all unprotected flash sectors.
+@end deffn
 @end deffn
 
 @deffn {Flash Driver} {sim3x}
