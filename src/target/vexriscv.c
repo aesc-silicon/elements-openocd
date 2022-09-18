@@ -2038,8 +2038,6 @@ static const struct command_registration vexriscv_exec_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-extern const struct command_registration semihosting_common_handlers[];
-
 const struct command_registration vexriscv_command_handlers[] = {
 	{
 		.name = "vexriscv",
