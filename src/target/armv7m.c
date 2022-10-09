@@ -528,11 +528,14 @@ int armv7m_start_algorithm(struct target *target,
 
 	/* Store all non-debug execution registers to armv7m_algorithm_info context */
 	for (unsigned i = 0; i < armv7m->arm.core_cache->num_regs; i++) {
+		struct reg *reg = &armv7m->arm.core_cache->reg_list[i];
+		if (!reg->valid)
+			armv7m_get_core_reg(reg);
 
-		armv7m_algorithm_info->context[i] = buf_get_u32(
-				armv7m->arm.core_cache->reg_list[i].value,
-				0,
-				32);
+		if (!reg->valid)
+			LOG_TARGET_WARNING(target, "Storing invalid register %s", reg->name);
+
+		armv7m_algorithm_info->context[i] = buf_get_u32(reg->value, 0, 32);
 	}
 
 	for (int i = 0; i < num_mem_params; i++) {
@@ -726,8 +729,9 @@ int armv7m_arch_state(struct target *target)
 	ctrl = buf_get_u32(arm->core_cache->reg_list[ARMV7M_CONTROL].value, 0, 32);
 	sp = buf_get_u32(arm->core_cache->reg_list[ARMV7M_R13].value, 0, 32);
 
-	LOG_USER("target halted due to %s, current mode: %s %s\n"
+	LOG_USER("[%s] halted due to %s, current mode: %s %s\n"
 		"xPSR: %#8.8" PRIx32 " pc: %#8.8" PRIx32 " %csp: %#8.8" PRIx32 "%s%s",
+		target_name(target),
 		debug_reason_name(target),
 		arm_mode_name(arm->core_mode),
 		armv7m_exception_string(armv7m->exception_number),
