@@ -222,6 +222,9 @@ endif
 if XVC
 DRIVERFILES += %D%/xvc.c
 endif
+if DIRTYJTAG
+DRIVERFILES += %D%/dirtyjtag.c
+endif
 
 DRIVERHEADERS = \
 	%D%/bitbang.h \

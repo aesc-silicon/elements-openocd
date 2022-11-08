@@ -173,6 +173,9 @@ ATTRS{idVendor}=="0B6B", ATTRS{idProduct}=="0040", MODE="660", GROUP="plugdev", 
 # Amontec JTAGkey-HiSpeed
 ATTRS{idVendor}=="0fbb", ATTRS{idProduct}=="1000", MODE="660", GROUP="plugdev", TAG+="uaccess"
 
+# DirtyJTAG adapter
+ATTRS{idVendor}=="1209", ATTRS{idProduct}=="c0ca", MODE="660", GROUP="plugdev", TAG+="uaccess"
+
 # SEGGER J-Link
 ATTRS{idVendor}=="1366", ATTRS{idProduct}=="0101", MODE="660", GROUP="plugdev", TAG+="uaccess"
 ATTRS{idVendor}=="1366", ATTRS{idProduct}=="0102", MODE="660", GROUP="plugdev", TAG+="uaccess"

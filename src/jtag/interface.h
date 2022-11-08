@@ -388,6 +388,7 @@ extern struct adapter_driver buspirate_adapter_driver;
 extern struct adapter_driver ch347_adapter_driver;
 extern struct adapter_driver cklink_adapter_driver;
 extern struct adapter_driver cmsis_dap_adapter_driver;
+extern struct adapter_driver dirtyjtag_adapter_driver;
 extern struct adapter_driver dmem_dap_adapter_driver;
 extern struct adapter_driver dummy_adapter_driver;
 extern struct adapter_driver ep93xx_adapter_driver;

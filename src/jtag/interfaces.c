@@ -172,5 +172,8 @@ struct adapter_driver *adapter_drivers[] = {
 #if BUILD_XVC == 1
 		&xvc_adapter_driver,
 #endif
+#if BUILD_DIRTYJTAG == 1
+		&dirtyjtag_adapter_driver,
+#endif
 		NULL,
 };
