@@ -78,6 +78,7 @@ static int hwthread_fill_thread(struct rtos *rtos, struct target *curr, int thre
 static int hwthread_update_threads(struct rtos *rtos)
 {
 	int threads_found = 0;
+	int thread_list_size = 0;
 	struct target_list *head;
 	struct target *target;
 	int64_t current_thread = 0;
@@ -99,13 +100,13 @@ static int hwthread_update_threads(struct rtos *rtos)
 			if (!target_was_examined(curr))
 				continue;
 
-			++threads_found;
+			++thread_list_size;
 		}
 	} else
-		threads_found = 1;
+		thread_list_size = 1;
 
 	/* create space for new thread details */
-	rtos->thread_details = malloc(sizeof(struct thread_detail) * threads_found);
+	rtos->thread_details = malloc(sizeof(struct thread_detail) * thread_list_size);
 
 	if (target->smp) {
 		/* loop over all threads */
@@ -170,10 +171,13 @@ static int hwthread_update_threads(struct rtos *rtos)
 			default:
 				break;
 			}
+
+			threads_found++;
 		}
 	} else {
 		hwthread_fill_thread(rtos, target, threads_found);
 		current_thread = threadid_from_target(target);
+		threads_found++;
 	}
 
 	rtos->thread_count = threads_found;
@@ -251,10 +255,10 @@ static int hwthread_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
 	for (int i = 0; i < reg_list_size; i++) {
 		if (!reg_list[i] || reg_list[i]->exist == false || reg_list[i]->hidden)
 			continue;
-		(*rtos_reg_list)[j].number = (*reg_list)[i].number;
-		(*rtos_reg_list)[j].size = (*reg_list)[i].size;
-		memcpy((*rtos_reg_list)[j].value, (*reg_list)[i].value,
-				((*reg_list)[i].size + 7) / 8);
+		(*rtos_reg_list)[j].number = reg_list[i]->number;
+		(*rtos_reg_list)[j].size = reg_list[i]->size;
+		memcpy((*rtos_reg_list)[j].value, reg_list[i]->value,
+				DIV_ROUND_UP(reg_list[i]->size, 8));
 		j++;
 	}
 	free(reg_list);
