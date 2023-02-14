@@ -14,6 +14,7 @@
 #include <helper/fileio.h>
 #include "target.h"
 #include "target_type.h"
+#include "target/semihosting_common.h"
 
 #include <jtag/jtag.h>
 

@@ -13,7 +13,6 @@
  *   GNU General Public License for more details.                          *
  ***************************************************************************/
 #include "vexriscv.h"
-#include "semihosting_common.h"
 #include <stdio.h>
 #ifdef _WIN32
 #include <winsock2.h>
