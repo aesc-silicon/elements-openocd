@@ -82,6 +82,7 @@ extern struct target_type cortexm_target;
 extern struct target_type cortexa_target;
 extern struct target_type aarch64_target;
 extern struct target_type cortexr4_target;
+extern struct target_type armv8r_target;
 extern struct target_type arm11_target;
 extern struct target_type ls1_sap_target;
 extern struct target_type mips_m4k_target;
@@ -142,6 +143,7 @@ static struct target_type *target_types[] = {
 	&esirisc_target,
 	&arcv2_target,
 	&aarch64_target,
+	&armv8r_target,
 	&mips_mips64_target,
 	&vexriscv_target,
 	NULL,
@@ -1940,13 +1942,13 @@ static int target_call_timer_callbacks_check_time(int checktime)
 	return ERROR_OK;
 }
 
-int target_call_timer_callbacks()
+int target_call_timer_callbacks(void)
 {
 	return target_call_timer_callbacks_check_time(1);
 }
 
 /* invoke periodic callbacks immediately */
-int target_call_timer_callbacks_now()
+int target_call_timer_callbacks_now(void)
 {
 	return target_call_timer_callbacks_check_time(0);
 }
