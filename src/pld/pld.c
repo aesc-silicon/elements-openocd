@@ -16,15 +16,6 @@
 #include <helper/time_support.h>
 
 
-/* pld drivers
- */
-extern struct pld_driver efinix_pld;
-extern struct pld_driver gatemate_pld;
-extern struct pld_driver gowin_pld;
-extern struct pld_driver intel_pld;
-extern struct pld_driver lattice_pld;
-extern struct pld_driver virtex2_pld;
-
 static struct pld_driver *pld_drivers[] = {
 	&efinix_pld,
 	&gatemate_pld,
@@ -165,8 +156,6 @@ COMMAND_HANDLER(handle_pld_load_command)
 	if (retval != ERROR_OK) {
 		command_print(CMD, "failed loading file %s to pld device %u",
 			CMD_ARGV[1], dev_id);
-		switch (retval) {
-		}
 		return retval;
 	} else {
 		gettimeofday(&end, NULL);
