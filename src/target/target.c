@@ -2213,6 +2213,9 @@ uint32_t target_get_working_area_avail(struct target *target)
 
 static void target_destroy(struct target *target)
 {
+	breakpoint_remove_all(target);
+	watchpoint_remove_all(target);
+
 	if (target->type->deinit_target)
 		target->type->deinit_target(target);
 
@@ -3140,9 +3143,9 @@ COMMAND_HANDLER(handle_reg_command)
 	if ((CMD_ARGC == 1) || ((CMD_ARGC == 2) && !((CMD_ARGV[1][0] >= '0')
 			&& (CMD_ARGV[1][0] <= '9')))) {
 		if ((CMD_ARGC == 2) && (strcmp(CMD_ARGV[1], "force") == 0))
-			reg->valid = 0;
+			reg->valid = false;
 
-		if (reg->valid == 0) {
+		if (!reg->valid) {
 			int retval = reg->type->get(reg);
 			if (retval != ERROR_OK) {
 				LOG_ERROR("Could not read register '%s'", reg->name);
@@ -3972,7 +3975,7 @@ static int handle_bp_command_set(struct command_invocation *cmd,
 
 	} else if (addr == 0) {
 		if (!target->type->add_context_breakpoint) {
-			LOG_ERROR("Context breakpoint not available");
+			LOG_TARGET_ERROR(target, "Context breakpoint not available");
 			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 		}
 		retval = context_breakpoint_add(target, asid, length, hw);
@@ -3982,7 +3985,7 @@ static int handle_bp_command_set(struct command_invocation *cmd,
 
 	} else {
 		if (!target->type->add_hybrid_breakpoint) {
-			LOG_ERROR("Hybrid breakpoint not available");
+			LOG_TARGET_ERROR(target, "Hybrid breakpoint not available");
 			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 		}
 		retval = hybrid_breakpoint_add(target, addr, asid, length, hw);
@@ -4119,7 +4122,7 @@ COMMAND_HANDLER(handle_wp_command)
 			type = WPT_ACCESS;
 			break;
 		default:
-			LOG_ERROR("invalid watchpoint mode ('%c')", CMD_ARGV[2][0]);
+			LOG_TARGET_ERROR(target, "invalid watchpoint mode ('%c')", CMD_ARGV[2][0]);
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		}
 		/* fall through */
@@ -4135,7 +4138,7 @@ COMMAND_HANDLER(handle_wp_command)
 	int retval = watchpoint_add(target, addr, length, type,
 			data_value, data_mask);
 	if (retval != ERROR_OK)
-		LOG_ERROR("Failure setting watchpoints");
+		LOG_TARGET_ERROR(target, "Failure setting watchpoints");
 
 	return retval;
 }
@@ -5150,7 +5153,7 @@ static int target_jim_get_reg(Jim_Interp *interp, int argc,
 			return JIM_ERR;
 		}
 
-		if (force) {
+		if (force || !reg->valid) {
 			int retval = reg->type->get(reg);
 
 			if (retval != ERROR_OK) {
@@ -5875,6 +5878,18 @@ COMMAND_HANDLER(handle_target_current_state)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(handle_target_debug_reason)
+{
+	if (CMD_ARGC != 0)
+		return ERROR_COMMAND_SYNTAX_ERROR;
+
+	struct target *target = get_current_target(CMD_CTX);
+
+	command_print(CMD, "%s", debug_reason_name(target));
+
+	return ERROR_OK;
+}
+
 static int jim_target_invoke_event(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
 	struct jim_getopt_info goi;
@@ -6027,6 +6042,13 @@ static const struct command_registration target_instance_command_handlers[] = {
 		.usage = "",
 	},
 	{
+		.name = "debug_reason",
+		.mode = COMMAND_EXEC,
+		.handler = handle_target_debug_reason,
+		.help = "displays the debug reason of this target",
+		.usage = "",
+	},
+	{
 		.name = "arp_examine",
 		.mode = COMMAND_EXEC,
 		.handler = handle_target_examine,
@@ -6125,7 +6147,7 @@ static int target_create(struct jim_getopt_info *goi)
 	if (e != JIM_OK)
 		return e;
 	struct transport *tr = get_current_transport();
-	if (tr->override_target) {
+	if (tr && tr->override_target) {
 		e = tr->override_target(&cp);
 		if (e != ERROR_OK) {
 			LOG_ERROR("The selected transport doesn't support this target");
