@@ -7319,10 +7319,6 @@ works only for chips that do not have factory pre-programmed region 0
 code.
 @end deffn
 
-@deffn {Command} {nrf5 info}
-Decodes and shows information from FICR and UICR registers.
-@end deffn
-
 @end deffn
 
 @deffn {Flash Driver} {ocl}
@@ -11072,6 +11068,11 @@ Reads EJTAG Registers for inspection.
 
 EJTAG Register Specification could be found in MIPS Document MD00047F, for
 core specific EJTAG Register definition, please check Core Specific SUM manual.
+@end deffn
+
+@deffn {Command} {mips32 dsp} [[register_name] [value]]
+Displays all DSP registers' contents or get/set value by register name. Will display
+an error if current CPU does not support DSP.
 @end deffn
 
 @section RISC-V Architecture
