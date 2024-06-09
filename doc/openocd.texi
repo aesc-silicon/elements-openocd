@@ -7316,12 +7316,13 @@ flash bank $_FLASHNAME npcx 0x64000000 0 0 0 $_TARGETNAME
 @end deffn
 
 @deffn {Flash Driver} {nrf5}
-All members of the nRF51 microcontroller families from Nordic Semiconductor
-include internal flash and use ARM Cortex-M0 core. nRF52 family powered
-by ARM Cortex-M4 or M4F core is supported too. nRF52832 is fully supported
-including BPROT flash protection scheme. nRF52833 and nRF52840 devices are
-supported with the exception of security extensions (flash access control list
-- ACL).
+Supports all members of the nRF51, nRF52 and nRF53 microcontroller families from
+Nordic Semiconductor. nRF91 family is supported too. One driver handles both
+the main flash and the UICR area.
+
+Flash protection is handled on nRF51 family and nRF52805, nRF52810, nRF52811,
+nRF52832 devices. Flash access control list (ACL) protection scheme of the newer
+devices is not supported.
 
 @example
 flash bank $_FLASHNAME nrf5 0 0x00000000 0 0 $_TARGETNAME
@@ -11278,9 +11279,35 @@ When utilizing version 0.11 of the RISC-V Debug Specification,
 and DBUS registers, respectively.
 @end deffn
 
+@deffn {Command} {riscv smp} [on|off]
+Display, enable or disable SMP handling mode. This command is needed only if
+user wants to temporary @b{disable} SMP handling for an existing SMP group
+(see @code{aarch64 smp} for additional information). To define an SMP
+group the command @code{target smp} should be used.
+@end deffn
+
+@deffn {Command} {riscv smp_gdb} [core_id]
+Display/set the current core displayed in GDB. This is needed only if
+@code{riscv smp} was used.
+@end deffn
+
 @deffn {Command} {riscv use_bscan_tunnel} value
-Enable or disable use of a BSCAN tunnel to reach DM.  Supply the width of
-the DM transport TAP's instruction register to enable.  Supply a value of 0 to disable.
+Enable or disable use of a BSCAN tunnel to reach the Debug Module. Supply the
+width of the DM transport TAP's instruction register to enable. Supply a
+value of 0 to disable.
+
+This BSCAN tunnel interface is specific to SiFive IP. Anybody may implement
+it, but currently there is no good documentation on it. In a nutshell, this
+feature scans USER4 into a Xilinx TAP to select the tunnel device (assuming
+hardware is present and it is hooked up to the Xilinx USER4 IR) and
+encapsulates a tunneled scan directive into a DR scan into the Xilinx TAP. A
+tunneled DR scan consists of:
+@enumerate
+@item 1 bit that selects IR when 0, or DR when 1
+@item 7 bits that encode the width of the desired tunneled scan
+@item A width+1 stream of bits for the tunneled TDI. The plus one is because there is a one-clock skew between TDI of Xilinx chain and TDO from tunneled chain.
+@item 3 bits of zero that the tunnel uses to go back to idle state.
+@end enumerate
 @end deffn
 
 @deffn {Command} {riscv set_ebreakm} on|off
