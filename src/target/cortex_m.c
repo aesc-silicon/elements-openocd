@@ -100,6 +100,12 @@ static const struct cortex_m_part_info cortex_m_parts[] = {
 		.flags = CORTEX_M_F_HAS_FPV5,
 	},
 	{
+		.impl_part = CORTEX_M52_PARTNO,
+		.name = "Cortex-M52",
+		.arch = ARM_ARCH_V8M,
+		.flags = CORTEX_M_F_HAS_FPV5,
+	},
+	{
 		.impl_part = CORTEX_M55_PARTNO,
 		.name = "Cortex-M55",
 		.arch = ARM_ARCH_V8M,
@@ -2606,8 +2612,8 @@ int cortex_m_examine(struct target *target)
 		if (retval != ERROR_OK)
 			return retval;
 
-		/* Inspect implementor/part to look for recognized cores  */
-		unsigned int impl_part = cpuid & (ARM_CPUID_IMPLEMENTOR_MASK | ARM_CPUID_PARTNO_MASK);
+		/* Inspect implementer/part to look for recognized cores  */
+		unsigned int impl_part = cpuid & (ARM_CPUID_IMPLEMENTER_MASK | ARM_CPUID_PARTNO_MASK);
 
 		for (unsigned int n = 0; n < ARRAY_SIZE(cortex_m_parts); n++) {
 			if (impl_part == cortex_m_parts[n].impl_part) {
