@@ -2958,6 +2958,11 @@ Display free device internal memory.
 Set the JTAG command version to be used. Without argument, show the actual JTAG
 command version.
 @end deffn
+@deffn {Command} {jlink targetpower}  [@option{0}|@option{1}|@option{on}|@option{off}]
+Switch the 5@ V target power supply on or off.
+Without argument, show the state of the target power supply.
+The target power supply is usually connected to pin 19 of the 20-pin connector.
+@end deffn
 @deffn {Command} {jlink config}
 Display the device configuration.
 @end deffn
@@ -3688,20 +3693,18 @@ displays the names of the transports supported by this
 version of OpenOCD.
 @end deffn
 
-@deffn {Command} {transport select} @option{transport_name}
+@deffn {Command} {transport select} [transport_name]
 Select which of the supported transports to use in this OpenOCD session.
 
 When invoked with @option{transport_name}, attempts to select the named
-transport.  The transport must be supported by the debug adapter
+transport. The transport must be supported by the debug adapter
 hardware and by the version of OpenOCD you are using (including the
 adapter's driver).
-
-If no transport has been selected and no @option{transport_name} is
-provided, @command{transport select} auto-selects the first transport
-supported by the debug adapter.
-
-@command{transport select} always returns the name of the session's selected
-transport, if any.
+When invoked with no transport name:
+@itemize @minus
+@item if no transport has been selected yet, it auto-selects the first transport supported by the debug adapter
+@item it returns the name of the session's selected transport
+@end itemize
 @end deffn
 
 @subsection JTAG Transport
