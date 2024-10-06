@@ -254,7 +254,7 @@ static int hwthread_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
 
 	int j = 0;
 	for (int i = 0; i < reg_list_size; i++) {
-		if (!reg_list[i] || reg_list[i]->exist == false || reg_list[i]->hidden)
+		if (!reg_list[i] || !reg_list[i]->exist || reg_list[i]->hidden)
 			continue;
 		j++;
 	}
@@ -267,7 +267,7 @@ static int hwthread_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
 
 	j = 0;
 	for (int i = 0; i < reg_list_size; i++) {
-		if (!reg_list[i] || reg_list[i]->exist == false || reg_list[i]->hidden)
+		if (!reg_list[i] || !reg_list[i]->exist || reg_list[i]->hidden)
 			continue;
 		if (!reg_list[i]->valid) {
 			retval = reg_list[i]->type->get(reg_list[i]);
@@ -320,7 +320,7 @@ static int hwthread_get_thread_reg(struct rtos *rtos, int64_t thread_id,
 
 	rtos_reg->number = reg->number;
 	rtos_reg->size = reg->size;
-	unsigned bytes = (reg->size + 7) / 8;
+	unsigned int bytes = (reg->size + 7) / 8;
 	assert(bytes <= sizeof(rtos_reg->value));
 	memcpy(rtos_reg->value, reg->value, bytes);
 
