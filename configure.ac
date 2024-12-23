@@ -290,11 +290,10 @@ AC_ARG_ADAPTERS([
   LIBFTDI_USB1_ADAPTERS,
   LIBGPIOD_ADAPTERS,
   SERIAL_PORT_ADAPTERS,
+  DUMMY_ADAPTER,
   PCIE_ADAPTERS,
   LIBJAYLINK_ADAPTERS
   ],[auto])
-
-AC_ARG_ADAPTERS([DUMMY_ADAPTER],[no])
 
 AC_ARG_ENABLE([parport],
   AS_HELP_STRING([--enable-parport], [Enable building the pc parallel port driver]),
@@ -416,8 +415,8 @@ AS_CASE(["${host_cpu}"],
 
 can_build_buspirate=yes
 
-AS_CASE([$host],
-  [*-cygwin*], [
+AS_CASE([$host_os],
+  [cygwin*], [
     is_win32=yes
     parport_use_ppdev=no
 
@@ -437,7 +436,7 @@ AS_CASE([$host],
       ])
     ])
   ],
-  [*-mingw* | *-msys*], [
+  [mingw* | msys*], [
     is_mingw=yes
     is_win32=yes
     parport_use_ppdev=no
@@ -456,7 +455,7 @@ AS_CASE([$host],
 
     AC_SUBST([HOST_CPPFLAGS], ["-D__USE_MINGW_ANSI_STDIO -DFD_SETSIZE=128"])
   ],
-  [*darwin*], [
+  [darwin*], [
     is_darwin=yes
 
     AS_IF([test "x$parport_use_giveio" = "xyes"], [
