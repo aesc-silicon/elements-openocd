@@ -5849,6 +5849,7 @@ static int target_create(struct jim_getopt_info *goi)
 		free(target->gdb_port_override);
 		free(target->trace_info);
 		free(target->type);
+		free(target->private_config);
 		free(target);
 		return e;
 	}
@@ -5866,6 +5867,7 @@ static int target_create(struct jim_getopt_info *goi)
 		free(target->gdb_port_override);
 		free(target->trace_info);
 		free(target->type);
+		free(target->private_config);
 		free(target);
 		return JIM_ERR;
 	}
@@ -5879,6 +5881,7 @@ static int target_create(struct jim_getopt_info *goi)
 			free(target->gdb_port_override);
 			free(target->trace_info);
 			free(target->type);
+			free(target->private_config);
 			free(target);
 			return JIM_ERR;
 		}
