@@ -177,6 +177,9 @@ endif
 if SYSFSGPIO
 DRIVERFILES += %D%/sysfsgpio.c
 endif
+if LINUXSPIDEV
+DRIVERFILES += %D%/linuxspidev.c
+endif
 if XLNX_PCIE_XVC
 DRIVERFILES += %D%/xlnx-pcie-xvc.c
 endif
