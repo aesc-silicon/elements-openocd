@@ -2508,6 +2508,8 @@ enabled when OpenOCD is configured, in order to be made
 available at run time.
 
 @deffn {Interface Driver} {amt_jtagaccel}
+@b{Note: This adapter is deprecated and support will be removed in the next release!}
+
 Amontec Chameleon in its JTAG Accelerator configuration,
 connected to a PC's EPP mode parallel port.
 This defines some driver-specific commands:
@@ -2927,6 +2929,8 @@ image. To be used with USB-Blaster II only.
 @end deffn
 
 @deffn {Interface Driver} {gw16012}
+@b{Note: This adapter is deprecated and support will be removed in the next release!}
+
 Gateworks GW16012 JTAG programmer.
 This has one driver-specific command:
 
